@@ -1,0 +1,457 @@
+{% extends "base.html" %}
+
+{% block title %}Redis Monitor - Comparison Results{% endblock %}
+
+{% block extra_css %}
+<style>
+    .report-container {
+        background: white;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .report-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 2rem;
+    }
+
+    .report-header h1 {
+        margin: 0 0 0.5rem 0;
+        font-size: 2em;
+    }
+
+    .report-header p {
+        margin: 0.25rem 0;
+        opacity: 0.9;
+    }
+
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 1rem;
+        padding: 2rem;
+        border-bottom: 1px solid #ddd;
+    }
+
+    .summary-card {
+        text-align: center;
+        padding: 1.5rem;
+        background-color: #f9f9f9;
+        border-radius: 4px;
+    }
+
+    .summary-card h3 {
+        font-size: 2em;
+        margin: 0 0 0.5rem 0;
+    }
+
+    .summary-card.identical h3 {
+        color: #4CAF50;
+    }
+
+    .summary-card.different h3 {
+        color: #FF9800;
+    }
+
+    .summary-card.error h3 {
+        color: #F44336;
+    }
+
+    .summary-card p {
+        margin: 0;
+        color: #666;
+        font-size: 0.95rem;
+    }
+
+    .status-message {
+        padding: 1.5rem 2rem;
+        border-bottom: 1px solid #ddd;
+        font-weight: bold;
+        font-size: 1.05em;
+    }
+
+    .status-message.success {
+        background-color: #E8F5E9;
+        color: #2E7D32;
+        border-left: 5px solid #4CAF50;
+    }
+
+    .status-message.warning {
+        background-color: #FFF3E0;
+        color: #E65100;
+        border-left: 5px solid #FF9800;
+    }
+
+    .status-message.error {
+        background-color: #FFEBEE;
+        color: #B71C1C;
+        border-left: 5px solid #F44336;
+    }
+
+    .results-container {
+        padding: 2rem;
+    }
+
+    .farm-result {
+        border: 1px solid #ddd;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        border-radius: 4px;
+        background: #fafafa;
+    }
+
+    .farm-result h3 {
+        color: #667eea;
+        margin-top: 0;
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid #667eea;
+    }
+
+    .farm-result code {
+        background-color: #f5f5f5;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-family: 'Courier New', monospace;
+    }
+
+    .result-status {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .api-status {
+        padding: 1rem;
+        border-radius: 4px;
+    }
+
+    .api-status.success {
+        background-color: #E8F5E9;
+        border-left: 4px solid #4CAF50;
+    }
+
+    .api-status.failure {
+        background-color: #FFEBEE;
+        border-left: 4px solid #F44336;
+    }
+
+    .comparison-result {
+        padding: 1.5rem;
+        border-radius: 4px;
+        margin-top: 1rem;
+    }
+
+    .comparison-result.identical {
+        background-color: #E8F5E9;
+        border-left: 4px solid #4CAF50;
+    }
+
+    .comparison-result.different {
+        background-color: #FFF3E0;
+        border-left: 4px solid #FF9800;
+    }
+
+    .comparison-result.error {
+        background-color: #FFEBEE;
+        border-left: 4px solid #F44336;
+    }
+
+    .comparison-result h4 {
+        margin-top: 0;
+        font-size: 1.1em;
+    }
+
+    .diff-summary {
+        list-style: none;
+        padding-left: 0;
+    }
+
+    .diff-summary li {
+        padding: 0.5rem 0;
+        padding-left: 1.5rem;
+        position: relative;
+    }
+
+    .diff-summary li:before {
+        content: "•";
+        position: absolute;
+        left: 0;
+        color: #FF9800;
+    }
+
+    .diff-item {
+        background-color: white;
+        padding: 0.75rem;
+        margin: 0.5rem 0;
+        border-left: 4px solid #FF9800;
+        border-radius: 2px;
+    }
+
+    .diff-item strong {
+        color: #333;
+    }
+
+    .diff-old {
+        color: #D32F2F;
+        font-size: 0.95rem;
+    }
+
+    .diff-new {
+        color: #388E3C;
+        font-size: 0.95rem;
+    }
+
+    details {
+        margin: 1rem 0;
+        padding: 1rem;
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+    }
+
+    details summary {
+        padding: 0.75rem;
+        background: #f5f5f5;
+        cursor: pointer;
+        user-select: none;
+        border-radius: 3px;
+        font-weight: bold;
+    }
+
+    details summary:hover {
+        background: #e8e8e8;
+    }
+
+    details[open] summary {
+        border-bottom: 1px solid #ddd;
+        margin-bottom: 0.75rem;
+    }
+
+    pre {
+        background: #f5f5f5;
+        padding: 1rem;
+        border-radius: 4px;
+        overflow-x: auto;
+        font-size: 0.9rem;
+    }
+
+    .action-buttons {
+        display: flex;
+        gap: 1rem;
+        margin-top: 2rem;
+        justify-content: center;
+    }
+
+    .btn {
+        padding: 0.75rem 1.5rem;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 1rem;
+        text-decoration: none;
+        display: inline-block;
+    }
+
+    .btn-primary {
+        background-color: #667eea;
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background-color: #764ba2;
+    }
+
+    .btn-secondary {
+        background-color: #999;
+        color: white;
+    }
+
+    .btn-secondary:hover {
+        background-color: #777;
+    }
+
+    @media (max-width: 768px) {
+        .result-status {
+            grid-template-columns: 1fr;
+        }
+
+        .summary-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="report-container">
+    <div class="report-header">
+        <h1>🔍 Farm Metadata Comparison Results</h1>
+        <p>OLD DB API vs NEW REDIS API Comparison</p>
+        <p>Run ID: <code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px;">{{ test_run_id }}</code> | Generated: {{ timestamp }}</p>
+    </div>
+
+    <div class="summary-grid">
+        <div class="summary-card identical">
+            <h3>{{ summary.identical }}</h3>
+            <p>Identical Responses</p>
+        </div>
+        <div class="summary-card different">
+            <h3>{{ summary.different }}</h3>
+            <p>Different Responses</p>
+        </div>
+        <div class="summary-card error">
+            <h3>{{ summary.errors }}</h3>
+            <p>Errors/Failures</p>
+        </div>
+        <div class="summary-card">
+            <h3>{{ summary.total }}</h3>
+            <p>Total Farms</p>
+        </div>
+    </div>
+
+    {% if summary.errors > 0 %}
+        <div class="status-message error">
+            ⚠ {{ summary.errors }} farm(s) failed API requests. Check details below.
+        </div>
+    {% elif summary.different > 0 %}
+        <div class="status-message warning">
+            ❌ {{ summary.different }} farm(s) have differences between old and new APIs. Review below to identify discrepancies.
+        </div>
+    {% else %}
+        <div class="status-message success">
+            ✓ All farm metadata is synchronized! No discrepancies found between APIs.
+        </div>
+    {% endif %}
+
+    <div class="results-container">
+        <h2>Comparison Details</h2>
+
+        {% for result in results %}
+            <div class="farm-result">
+                <h3>Farm ID: <code>{{ result.farm_id }}</code></h3>
+
+                <div class="result-status">
+                    {% if result.old_api %}
+                        <div class="api-status success">
+                            <strong>✓ OLD DB API:</strong> Success<br>
+                            <small>{{ result.old_api | tojson | length }} bytes</small>
+                        </div>
+                    {% else %}
+                        <div class="api-status failure">
+                            <strong>✗ OLD DB API:</strong> Failed<br>
+                            <small>Request error</small>
+                        </div>
+                    {% endif %}
+
+                    {% if result.new_api %}
+                        <div class="api-status success">
+                            <strong>✓ NEW REDIS API:</strong> Success<br>
+                            <small>{{ result.new_api | tojson | length }} bytes</small>
+                        </div>
+                    {% else %}
+                        <div class="api-status failure">
+                            <strong>✗ NEW REDIS API:</strong> Failed<br>
+                            <small>Request error</small>
+                        </div>
+                    {% endif %}
+                </div>
+
+                {% if result.comparison.error %}
+                    <div class="comparison-result error">
+                        <h4>❌ Comparison Error</h4>
+                        <p>{{ result.comparison.error }}</p>
+                    </div>
+                {% elif result.comparison.identical %}
+                    <div class="comparison-result identical">
+                        <h4>✓ Responses are IDENTICAL</h4>
+                        <p>No differences found between old and new API responses.</p>
+                    </div>
+                {% else %}
+                    <div class="comparison-result different">
+                        <h4>❌ Responses Differ</h4>
+                        
+                        {% if result.comparison.summary %}
+                            <ul class="diff-summary">
+                                {% if result.comparison.summary.values_changed > 0 %}
+                                    <li>{{ result.comparison.summary.values_changed }} value(s) changed</li>
+                                {% endif %}
+                                {% if result.comparison.summary.items_added > 0 %}
+                                    <li>{{ result.comparison.summary.items_added }} item(s) added in new API</li>
+                                {% endif %}
+                                {% if result.comparison.summary.items_removed > 0 %}
+                                    <li>{{ result.comparison.summary.items_removed }} item(s) removed in new API</li>
+                                {% endif %}
+                                {% if result.comparison.summary.type_changes > 0 %}
+                                    <li>{{ result.comparison.summary.type_changes }} type change(s)</li>
+                                {% endif %}
+                            </ul>
+                        {% endif %}
+
+                        {% if result.comparison.differences %}
+                            <details>
+                                <summary>📋 Show Detailed Differences</summary>
+                                
+                                {% if result.comparison.differences.values_changed %}
+                                    <h5 style="color: #FF9800;">Values Changed:</h5>
+                                    {% for key, change in result.comparison.differences.values_changed.items() %}
+                                        <div class="diff-item">
+                                            <strong>{{ key }}</strong><br>
+                                            <span class="diff-old">- {{ change.old_value }}</span><br>
+                                            <span class="diff-new">+ {{ change.new_value }}</span>
+                                        </div>
+                                    {% endfor %}
+                                {% endif %}
+
+                                {% if result.comparison.differences.items_added %}
+                                    <h5 style="color: #4CAF50;">Items Added (in New API):</h5>
+                                    {% for item in result.comparison.differences.items_added %}
+                                        <div class="diff-item" style="border-left-color: #4CAF50;">
+                                            <strong>✓ {{ item }}</strong>
+                                        </div>
+                                    {% endfor %}
+                                {% endif %}
+
+                                {% if result.comparison.differences.items_removed %}
+                                    <h5 style="color: #D32F2F;">Items Removed (from New API):</h5>
+                                    {% for item in result.comparison.differences.items_removed %}
+                                        <div class="diff-item" style="border-left-color: #D32F2F;">
+                                            <strong>✗ {{ item }}</strong>
+                                        </div>
+                                    {% endfor %}
+                                {% endif %}
+                            </details>
+                        {% endif %}
+                    </div>
+                {% endif %}
+
+                <details>
+                    <summary>📄 Show Raw API Responses</summary>
+                    
+                    {% if result.old_api %}
+                        <h5>Old DB API Response:</h5>
+                        <pre>{{ result.old_api | tojson(indent=2) }}</pre>
+                    {% else %}
+                        <p style="color: #D32F2F;"><strong>Old DB API Response:</strong> Not available (request failed)</p>
+                    {% endif %}
+
+                    {% if result.new_api %}
+                        <h5>New Redis API Response:</h5>
+                        <pre>{{ result.new_api | tojson(indent=2) }}</pre>
+                    {% else %}
+                        <p style="color: #D32F2F;"><strong>New Redis API Response:</strong> Not available (request failed)</p>
+                    {% endif %}
+                </details>
+            </div>
+        {% endfor %}
+    </div>
+
+    <div class="action-buttons">
+        <a href="/" class="btn btn-primary">Compare Another Farm</a>
+        <a href="/api/docs" class="btn btn-secondary">API Documentation</a>
+    </div>
+</div>
+{% endblock %}

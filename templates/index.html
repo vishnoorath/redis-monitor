@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+
+{% block title %}Redis Monitor - Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+    .dashboard {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2rem;
+        margin-bottom: 2rem;
+    }
+
+    .card {
+        background: white;
+        padding: 2rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .card h2 {
+        color: #667eea;
+        margin-bottom: 1.5rem;
+        padding-bottom: 1rem;
+        border-bottom: 2px solid #667eea;
+    }
+
+    .form-group {
+        margin-bottom: 1.5rem;
+    }
+
+    label {
+        display: block;
+        font-weight: bold;
+        margin-bottom: 0.5rem;
+        color: #333;
+    }
+
+    input[type="text"],
+    textarea {
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-family: 'Courier New', monospace;
+        font-size: 0.95rem;
+    }
+
+    textarea {
+        resize: vertical;
+        min-height: 100px;
+    }
+
+    input[type="text"]:focus,
+    textarea:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .checkbox-group {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    input[type="checkbox"] {
+        width: 1.2rem;
+        height: 1.2rem;
+        cursor: pointer;
+    }
+
+    button {
+        background-color: #667eea;
+        color: white;
+        padding: 0.75rem 1.5rem;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 1rem;
+        font-weight: bold;
+        transition: background-color 0.3s;
+    }
+
+    button:hover {
+        background-color: #764ba2;
+    }
+
+    button:active {
+        opacity: 0.9;
+    }
+
+    .button-group {
+        display: flex;
+        gap: 1rem;
+    }
+
+    .button-secondary {
+        background-color: #999;
+    }
+
+    .button-secondary:hover {
+        background-color: #777;
+    }
+
+    .info-box {
+        background-color: #E8F5E9;
+        border-left: 4px solid #4CAF50;
+        padding: 1rem;
+        border-radius: 4px;
+        margin-bottom: 1rem;
+    }
+
+    .info-box p {
+        margin: 0;
+        color: #2E7D32;
+    }
+
+    .example {
+        background-color: #f5f5f5;
+        padding: 1rem;
+        border-radius: 4px;
+        font-family: 'Courier New', monospace;
+        font-size: 0.9rem;
+        overflow-x: auto;
+        margin-top: 0.5rem;
+    }
+
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+
+    .stat-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        text-align: center;
+    }
+
+    .stat-card h3 {
+        color: #667eea;
+        font-size: 2rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .stat-card p {
+        color: #666;
+        font-size: 0.9rem;
+    }
+
+    .feature-list {
+        list-style: none;
+    }
+
+    .feature-list li {
+        padding: 0.75rem 0;
+        padding-left: 1.5rem;
+        position: relative;
+    }
+
+    .feature-list li:before {
+        content: "✓";
+        position: absolute;
+        left: 0;
+        color: #4CAF50;
+        font-weight: bold;
+    }
+
+    @media (max-width: 768px) {
+        .dashboard {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="stats-grid">
+    <div class="stat-card">
+        <h3>6</h3>
+        <p>Available Endpoints</p>
+    </div>
+    <div class="stat-card">
+        <h3>∞</h3>
+        <p>Farms Can Monitor</p>
+    </div>
+    <div class="stat-card">
+        <h3>∞</h3>
+        <p>Concurrent Users</p>
+    </div>
+    <div class="stat-card">
+        <h3>100%</h3>
+        <p>API Coverage</p>
+    </div>
+</div>
+
+<div class="dashboard">
+    <!-- Form Card -->
+    <div class="card">
+        <h2>Compare Farm Metadata</h2>
+        
+        <div class="info-box">
+            <p>Enter farm IDs to compare metadata between OLD DB API and NEW REDIS API</p>
+        </div>
+
+        <form method="POST" action="/compare">
+            <div class="form-group">
+                <label for="farm_ids">Farm IDs (one per line or comma-separated)</label>
+                <textarea 
+                    id="farm_ids"
+                    name="farm_ids" 
+                    placeholder="13f9ef67-19b0-4e3d-bec5-6dd15247492c&#10;farm-id-2&#10;farm-id-3"
+                    required></textarea>
+                <div class="example">
+                    Example: Enter farm IDs separated by new lines or commas
+                </div>
+            </div>
+
+
+
+            <div class="button-group">
+                <button type="submit">Compare Farms</button>
+                <button type="reset" class="button-secondary">Clear</button>
+            </div>
+
+            <div class="info-box" style="margin-top: 1.5rem;">
+                <p><strong>Note:</strong> Results are displayed inline in your browser. No files are saved to disk. Processing time depends on number of farms and API response times.</p>
+            </div>
+        </form>
+    </div>
+
+    <!-- Info Card -->
+    <div class="card">
+        <h2>How It Works</h2>
+        
+        <h3 style="color: #666; font-size: 1.1rem; margin-top: 0;">Process Flow</h3>
+        <ol style="margin-left: 1.5rem; margin-bottom: 1.5rem;">
+            <li>Enter farm IDs to monitor</li>
+            <li>Generate JWT authentication token</li>
+            <li>Fetch metadata from OLD DB API</li>
+            <li>Fetch metadata from NEW REDIS API</li>
+            <li>Compare responses using DeepDiff</li>
+            <li>Generate reports and display results</li>
+        </ol>
+
+        <h3 style="color: #666; font-size: 1.1rem; margin-bottom: 1rem;">Features</h3>
+        <ul class="feature-list">
+            <li>Compare multiple farms in one request</li>
+            <li>Color-coded difference highlighting</li>
+            <li>Detailed summary statistics</li>
+            <li>Expandable comparison details</li>
+            <li>Real-time status display</li>
+            <li>No files written to disk</li>
+        </ul>
+    </div>
+</div>
+
+<!-- Quick API Reference -->
+<div class="card" style="margin-top: 2rem;">
+    <h2>API Endpoints</h2>
+    
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
+        <div style="background-color: #f0f0f0; padding: 1rem; border-radius: 4px;">
+            <strong>POST /api/compare</strong>
+            <p style="margin: 0.5rem 0 0; font-size: 0.9rem; color: #666;">Compare multiple farms</p>
+        </div>
+
+        <div style="background-color: #f0f0f0; padding: 1rem; border-radius: 4px;">
+            <strong>GET /api/monitor/{farm_id}</strong>
+            <p style="margin: 0.5rem 0 0; font-size: 0.9rem; color: #666;">Monitor single farm</p>
+        </div>
+
+        <div style="background-color: #f0f0f0; padding: 1rem; border-radius: 4px;">
+            <strong>GET /health</strong>
+            <p style="margin: 0.5rem 0 0; font-size: 0.9rem; color: #666;">Health check</p>
+        </div>
+
+        <div style="background-color: #f0f0f0; padding: 1rem; border-radius: 4px;">
+            <strong>GET /api/config</strong>
+            <p style="margin: 0.5rem 0 0; font-size: 0.9rem; color: #666;">Get configuration</p>
+        </div>
+
+        <div style="background-color: #f0f0f0; padding: 1rem; border-radius: 4px;">
+            <strong>GET /api/docs</strong>
+            <p style="margin: 0.5rem 0 0; font-size: 0.9rem; color: #666;">API documentation</p>
+        </div>
+
+        <div style="background-color: #f0f0f0; padding: 1rem; border-radius: 4px;">
+            <strong>POST /api/monitor</strong>
+            <p style="margin: 0.5rem 0 0; font-size: 0.9rem; color: #666;">Monitor farm (POST)</p>
+        </div>
+    </div>
+
+    <div style="margin-top: 1.5rem; padding: 1rem; background-color: #E3F2FD; border-radius: 4px;">
+        <p style="margin: 0;"><strong>📖 Full Documentation:</strong> Visit <a href="/api/docs" style="color: #667eea;">API Docs</a> for complete endpoint reference</p>
+    </div>
+</div>
+{% endblock %}
