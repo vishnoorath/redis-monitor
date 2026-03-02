@@ -4,8 +4,20 @@ Compares farm metadata responses from old and new APIs using DeepDiff.
 """
 
 from deepdiff import DeepDiff
+import unicodedata
+import re
 
-
+# Option 1: Normalize strings (remove trailing/leading spaces)
+def normalize(obj):
+        """Strip whitespace and normalize unicode"""
+        if isinstance(obj, str):
+            return re.sub(r'\s+', ' ', obj).strip()  # Replace multiple spaces with single space
+        elif isinstance(obj, dict):
+            return {k: normalize(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [normalize(item) for item in obj]
+        return obj
+    
 def compare_responses(old_response, new_response):
     """
     Compare farm metadata responses from old and new APIs.
@@ -25,9 +37,33 @@ def compare_responses(old_response, new_response):
             'differences': {}
         }
 
-    # Use DeepDiff to compare the two responses
-    diff = DeepDiff(old_response, new_response, ignore_order=False)
 
+
+    old_response = normalize(old_response)
+    new_response = normalize(new_response)
+    
+    # # DEBUG: Check the actual registeredBy values
+    # try:
+    #     old_reg = old_response["farmMetaDataModel"]["cattleData"][0].get("registeredBy", "N/A")
+    #     new_reg = new_response["farmMetaDataModel"]["cattleData"][0].get("registeredBy", "N/A")
+        
+    #     print(f"Old registeredBy: '{old_reg}'")
+    #     print(f"New registeredBy: '{new_reg}'")
+    #     print(f"Old repr: {repr(old_reg)}")
+    #     print(f"New repr: {repr(new_reg)}")
+    #     print(f"Old bytes: {old_reg.encode('utf-8')}")
+    #     print(f"New bytes: {new_reg.encode('utf-8')}")
+    #     print(f"Are they equal? {old_reg == new_reg}")
+    #     print(f"Old length: {len(old_reg)}, New length: {len(new_reg)}")
+    # except:
+    #     pass
+    
+    # Use DeepDiff to compare the two responses
+    diff = DeepDiff(old_response, new_response, ignore_order=False,  
+            exclude_regex_paths=[
+                r".*\['cattleData'\].*\['lactationEndDate'\]"
+            ])
+    
     # Generate summary
     is_identical = len(diff) == 0
 

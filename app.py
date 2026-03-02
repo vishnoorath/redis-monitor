@@ -7,6 +7,7 @@ from flask import Flask, request, jsonify, render_template
 from datetime import datetime
 import sys
 from pathlib import Path
+from flasgger import Flasgger
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -22,6 +23,17 @@ from src.html_reporter import HTMLReporter
 # Initialize Flask app
 app = Flask(__name__)
 app.config['JSON_SORT_KEYS'] = False
+
+# Configure Swagger/Flasgger
+app.config['SWAGGER'] = {
+    'title': 'Redis Monitor API',
+    'version': '1.0.0',
+    'description': 'Farm metadata comparison monitoring between OLD DB API and NEW REDIS API',
+    'uiversion': 3
+}
+
+# Initialize Swagger/Flasgger
+swagger = Flasgger(app)
 
 # Initialize components
 api_client = APIClient()
@@ -76,7 +88,28 @@ def monitor_single_farm(farm_id):
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """Health check endpoint."""
+    """
+    Health check endpoint
+    ---
+    tags:
+      - System
+    responses:
+      200:
+        description: Server is healthy
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: healthy
+            service:
+              type: string
+              example: Redis Monitor API
+            timestamp:
+              type: string
+              format: date-time
+              example: 2026-03-02T10:30:45.123456
+    """
     return jsonify({
         'status': 'healthy',
         'service': 'Redis Monitor API',
@@ -87,30 +120,60 @@ def health_check():
 @app.route('/api/compare', methods=['POST'])
 def compare_farms():
     """
-    Compare farm metadata between old and new APIs.
-
-    Request body:
-    {
-        "farmIds": ["farm-id-1", "farm-id-2", ...]
-    }
-
-    Returns:
-    {
-        "status": "success",
-        "summary": {
-            "total": 2,
-            "identical": 1,
-            "different": 1,
-            "errors": 0
-        },
-        "results": [
-            {
-                "farm_id": "...",
-                "status": "success",
-                "comparison": {...}
-            }
-        ]
-    }
+    Compare farm metadata between old and new APIs
+    ---
+    tags:
+      - Comparison
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - farmIds
+          properties:
+            farmIds:
+              type: array
+              items:
+                type: string
+              example: ["farm-id-1", "farm-id-2"]
+              description: Array of farm IDs to compare
+    responses:
+      200:
+        description: Comparison completed successfully
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: success
+            summary:
+              type: object
+              properties:
+                total:
+                  type: integer
+                  example: 2
+                identical:
+                  type: integer
+                  example: 1
+                different:
+                  type: integer
+                  example: 1
+                errors:
+                  type: integer
+                  example: 0
+            results:
+              type: array
+              items:
+                type: object
+            timestamp:
+              type: string
+              format: date-time
+      400:
+        description: Invalid request (missing or invalid farmIds)
+      500:
+        description: Server error
     """
     try:
         # Get request data
@@ -169,13 +232,35 @@ def compare_farms():
 @app.route('/api/monitor/<farm_id>', methods=['GET'])
 def monitor_farm_get(farm_id):
     """
-    Monitor a single farm (GET endpoint).
-
-    Args:
-        farm_id (str): The farm ID to monitor.
-
-    Returns:
-        JSON response with comparison results.
+    Monitor a single farm (GET endpoint)
+    ---
+    tags:
+      - Monitoring
+    parameters:
+      - in: path
+        name: farm_id
+        type: string
+        required: true
+        description: The farm ID to monitor
+        example: farm-id-1
+    responses:
+      200:
+        description: Farm comparison completed successfully
+        schema:
+          type: object
+          properties:
+            farm_id:
+              type: string
+            status:
+              type: string
+              enum: [success, error]
+            comparison:
+              type: object
+            timestamp:
+              type: string
+              format: date-time
+      500:
+        description: Error monitoring farm
     """
     result = monitor_single_farm(farm_id)
 
@@ -188,15 +273,43 @@ def monitor_farm_get(farm_id):
 @app.route('/api/monitor', methods=['POST'])
 def monitor_farm_post():
     """
-    Monitor a single farm (POST endpoint).
-
-    Request body:
-    {
-        "farmId": "farm-id-here"
-    }
-
-    Returns:
-        JSON response with comparison results.
+    Monitor a single farm (POST endpoint)
+    ---
+    tags:
+      - Monitoring
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - farmId
+          properties:
+            farmId:
+              type: string
+              example: farm-id-1
+              description: The farm ID to monitor
+    responses:
+      200:
+        description: Farm comparison completed successfully
+        schema:
+          type: object
+          properties:
+            farm_id:
+              type: string
+            status:
+              type: string
+              enum: [success, error]
+            comparison:
+              type: object
+            timestamp:
+              type: string
+              format: date-time
+      400:
+        description: Missing required field farmId
+      500:
+        description: Error monitoring farm
     """
     try:
         data = request.get_json()
@@ -224,7 +337,33 @@ def monitor_farm_post():
 
 @app.route('/api/config', methods=['GET'])
 def get_config():
-    """Get current configuration (public info only)."""
+    """
+    Get current API configuration
+    ---
+    tags:
+      - System
+    responses:
+      200:
+        description: Current configuration
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: success
+            config:
+              type: object
+              properties:
+                old_api_endpoint:
+                  type: string
+                  example: http://api.internal:8080/api/farms
+                new_api_endpoint:
+                  type: string
+                  example: http://redis-api.internal:8080/api/farms
+                request_timeout:
+                  type: integer
+                  example: 30
+    """
     return jsonify({
         'status': 'success',
         'config': {
@@ -237,60 +376,42 @@ def get_config():
 
 @app.route('/api/docs', methods=['GET'])
 def api_documentation():
-    """Get API documentation."""
-    docs = {
+    """
+    API Documentation endpoint
+    ---
+    tags:
+      - System
+    responses:
+      200:
+        description: API Documentation information
+        schema:
+          type: object
+          properties:
+            service:
+              type: string
+              example: Redis Monitor API
+            version:
+              type: string
+              example: 1.0.0
+            swagger_ui:
+              type: string
+              example: /apidocs/
+            swagger_json:
+              type: string
+              example: /apispec.json
+    """
+    return jsonify({
         'service': 'Redis Monitor API',
         'version': '1.0.0',
-        'endpoints': {
-            'GET /health': {
-                'description': 'Health check endpoint',
-                'response': {
-                    'status': 'healthy',
-                    'service': 'Redis Monitor API',
-                    'timestamp': '2026-03-02T10:30:45.123456'
-                }
-            },
-            'POST /api/compare': {
-                'description': 'Compare multiple farms metadata',
-                'request_body': {
-                    'farmIds': ['farm-id-1', 'farm-id-2']
-                },
-                'response': {
-                    'status': 'success',
-                    'summary': {
-                        'total': 2,
-                        'identical': 1,
-                        'different': 1,
-                        'errors': 0
-                    },
-                    'results': 'Array of comparison results'
-                }
-            },
-            'GET /api/monitor/<farm_id>': {
-                'description': 'Monitor a single farm (GET)',
-                'response': 'Single farm comparison result'
-            },
-            'POST /api/monitor': {
-                'description': 'Monitor a single farm (POST)',
-                'request_body': {
-                    'farmId': 'farm-id-here'
-                },
-                'response': 'Single farm comparison result'
-            },
-            'GET /api/config': {
-                'description': 'Get current API configuration',
-                'response': {
-                    'old_api_endpoint': 'URL',
-                    'new_api_endpoint': 'URL',
-                    'request_timeout': 30
-                }
-            },
-            'GET /api/docs': {
-                'description': 'Get this API documentation'
-            }
+        'documentation': 'OpenAPI/Swagger documentation is available',
+        'swagger_ui': 'Visit /apidocs/ for interactive Swagger UI',
+        'swagger_spec': 'Visit /apispec.json for OpenAPI specification',
+        'info': {
+            'title': 'Redis Monitor API',
+            'description': 'Farm metadata comparison monitoring between OLD DB API and NEW REDIS API',
+            'version': '1.0.0'
         }
-    }
-    return jsonify(docs), 200
+    }), 200
 
 
 @app.errorhandler(404)
