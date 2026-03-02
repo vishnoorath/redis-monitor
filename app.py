@@ -455,6 +455,7 @@ def compare_web():
     Web UI endpoint for comparing farms.
     Accepts form data and renders report inline.
     """
+    import traceback
     try:
         # Get farm IDs from form
         farm_ids_input = request.form.get('farm_ids', '').strip()
@@ -512,7 +513,11 @@ def compare_web():
         )
 
     except Exception as e:
-        return render_template('index.html', error=f'Error processing request: {str(e)}'), 500
+        error_trace = traceback.format_exc()
+        print(f"\n!!! TEMPLATE ERROR !!!")
+        print(error_trace)
+        print("!!! END ERROR !!!\n")
+        return render_template('index.html', error=f'Error processing request: {str(e)}\n\nTrace:\n{error_trace}'), 500
 
 
 if __name__ == '__main__':

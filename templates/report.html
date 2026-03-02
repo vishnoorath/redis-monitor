@@ -90,8 +90,93 @@
         border-left: 5px solid #F44336;
     }
 
-    .results-container {
+    /* TAB STYLES */
+    .tabs-container {
+        border-bottom: 2px solid #ddd;
+        background: #fafafa;
+    }
+
+    .tabs-nav {
+        display: flex;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        gap: 1px;
+    }
+
+    .tabs-nav li {
+        margin: 0;
+    }
+
+    .tab-button {
+        padding: 1rem 2rem;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        font-size: 1rem;
+        font-weight: 500;
+        color: #666;
+        border-bottom: 3px solid transparent;
+        transition: all 0.3s ease;
+    }
+
+    .tab-button:hover {
+        background: #f0f0f0;
+        color: #333;
+    }
+
+    .tab-button.active {
+        color: #667eea;
+        border-bottom-color: #667eea;
+        background: white;
+    }
+
+    .tab-button.identical {
+        color: #4CAF50;
+    }
+
+    .tab-button.identical.active {
+        border-bottom-color: #4CAF50;
+    }
+
+    .tab-button.different {
+        color: #FF9800;
+    }
+
+    .tab-button.different.active {
+        border-bottom-color: #FF9800;
+    }
+
+    .tab-button.error {
+        color: #F44336;
+    }
+
+    .tab-button.error.active {
+        border-bottom-color: #F44336;
+    }
+
+    .tab-content {
+        display: none;
         padding: 2rem;
+    }
+
+    .tab-content.active {
+        display: block;
+    }
+
+    .tab-empty-state {
+        text-align: center;
+        padding: 3rem;
+        color: #999;
+    }
+
+    .tab-empty-state h3 {
+        color: #666;
+        margin-bottom: 0.5rem;
+    }
+
+    .results-container {
+        padding: 0;
     }
 
     .farm-result {
@@ -244,6 +329,7 @@
         gap: 1rem;
         margin-top: 2rem;
         justify-content: center;
+        padding: 0 2rem 2rem 2rem;
     }
 
     .btn {
@@ -282,6 +368,15 @@
         .summary-grid {
             grid-template-columns: repeat(2, 1fr);
         }
+
+        .tabs-nav {
+            flex-wrap: wrap;
+        }
+
+        .tab-button {
+            padding: 0.75rem 1rem;
+            font-size: 0.9rem;
+        }
     }
 </style>
 {% endblock %}
@@ -315,11 +410,11 @@
 
     {% if summary.errors > 0 %}
         <div class="status-message error">
-            ⚠ {{ summary.errors }} farm(s) failed API requests. Check details below.
+            ⚠ {{ summary.errors }} farm(s) failed API requests. Check the <strong>Errors</strong> tab below.
         </div>
     {% elif summary.different > 0 %}
         <div class="status-message warning">
-            ❌ {{ summary.different }} farm(s) have differences between old and new APIs. Review below to identify discrepancies.
+            ❌ {{ summary.different }} farm(s) have differences between old and new APIs. Review the <strong>Different Response</strong> tab to identify discrepancies.
         </div>
     {% else %}
         <div class="status-message success">
@@ -327,126 +422,259 @@
         </div>
     {% endif %}
 
+    <!-- TAB NAVIGATION -->
+    <div class="tabs-container">
+        <ul class="tabs-nav">
+            <li>
+                <button class="tab-button identical active" onclick="switchTab('identical')">
+                    ✓ Identical Responses ({{ summary.identical }})
+                </button>
+            </li>
+            <li>
+                <button class="tab-button different" onclick="switchTab('different')">
+                    ❌ Different Responses ({{ summary.different }})
+                </button>
+            </li>
+            <li>
+                <button class="tab-button error" onclick="switchTab('errors')">
+                    ⚠ Errors ({{ summary.errors }})
+                </button>
+            </li>
+        </ul>
+    </div>
+
+    <!-- TAB CONTENT -->
     <div class="results-container">
-        <h2>Comparison Details</h2>
+        <!-- IDENTICAL TAB -->
+        <div id="tab-identical" class="tab-content active">
+            {% set has_identical = false %}
+            {% for result in results if result.comparison.identical %}
+                {% set has_identical = true %}
+                <div class="farm-result">
+                    <h3>Farm ID: <code>{{ result.farm_id }}</code></h3>
 
-        {% for result in results %}
-            <div class="farm-result">
-                <h3>Farm ID: <code>{{ result.farm_id }}</code></h3>
-
-                <div class="result-status">
-                    {% if result.old_api %}
+                    <div class="result-status">
                         <div class="api-status success">
                             <strong>✓ OLD DB API:</strong> Success<br>
                             <small>{{ result.old_api | tojson | length }} bytes</small>
                         </div>
-                    {% else %}
-                        <div class="api-status failure">
-                            <strong>✗ OLD DB API:</strong> Failed<br>
-                            <small>Request error</small>
-                        </div>
-                    {% endif %}
-
-                    {% if result.new_api %}
                         <div class="api-status success">
                             <strong>✓ NEW REDIS API:</strong> Success<br>
                             <small>{{ result.new_api | tojson | length }} bytes</small>
                         </div>
-                    {% else %}
-                        <div class="api-status failure">
-                            <strong>✗ NEW REDIS API:</strong> Failed<br>
-                            <small>Request error</small>
-                        </div>
-                    {% endif %}
-                </div>
-
-                {% if result.comparison.error %}
-                    <div class="comparison-result error">
-                        <h4>❌ Comparison Error</h4>
-                        <p>{{ result.comparison.error }}</p>
                     </div>
-                {% elif result.comparison.identical %}
+
                     <div class="comparison-result identical">
                         <h4>✓ Responses are IDENTICAL</h4>
                         <p>No differences found between old and new API responses.</p>
                     </div>
-                {% else %}
-                    <div class="comparison-result different">
-                        <h4>❌ Responses Differ</h4>
+
+                    <details>
+                        <summary>📄 Show Raw API Responses</summary>
                         
-                        {% if result.comparison.summary %}
-                            <ul class="diff-summary">
-                                {% if result.comparison.summary.values_changed > 0 %}
-                                    <li>{{ result.comparison.summary.values_changed }} value(s) changed</li>
-                                {% endif %}
-                                {% if result.comparison.summary.items_added > 0 %}
-                                    <li>{{ result.comparison.summary.items_added }} item(s) added in new API</li>
-                                {% endif %}
-                                {% if result.comparison.summary.items_removed > 0 %}
-                                    <li>{{ result.comparison.summary.items_removed }} item(s) removed in new API</li>
-                                {% endif %}
-                                {% if result.comparison.summary.type_changes > 0 %}
-                                    <li>{{ result.comparison.summary.type_changes }} type change(s)</li>
-                                {% endif %}
-                            </ul>
-                        {% endif %}
+                        <h5>Old DB API Response:</h5>
+                        <pre>{{ result.old_api | tojson(indent=2) }}</pre>
 
-                        {% if result.comparison.differences %}
+                        <h5>New Redis API Response:</h5>
+                        <pre>{{ result.new_api | tojson(indent=2) }}</pre>
+                    </details>
+                </div>
+            {% endfor %}
+            
+            {% if not has_identical %}
+                <div class="tab-empty-state">
+                    <h3>No Identical Responses</h3>
+                    <p>All farms have differences or errors.</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- DIFFERENT TAB -->
+        <div id="tab-different" class="tab-content">
+            {% set has_different = false %}
+            {% for result in results if (not result.comparison.identical) and (not result.comparison.error | default(false)) %}
+                {% set has_different = true %}
+                <div class="farm-result">
+                        <h3>Farm ID: <code>{{ result.farm_id }}</code></h3>
+
+                        <div class="result-status">
+                            {% if result.old_api %}
+                                <div class="api-status success">
+                                    <strong>✓ OLD DB API:</strong> Success<br>
+                                    <small>{{ result.old_api | tojson | length }} bytes</small>
+                                </div>
+                            {% else %}
+                                <div class="api-status failure">
+                                    <strong>✗ OLD DB API:</strong> Failed<br>
+                                    <small>Request error</small>
+                                </div>
+                            {% endif %}
+
+                            {% if result.new_api %}
+                                <div class="api-status success">
+                                    <strong>✓ NEW REDIS API:</strong> Success<br>
+                                    <small>{{ result.new_api | tojson | length }} bytes</small>
+                                </div>
+                            {% else %}
+                                <div class="api-status failure">
+                                    <strong>✗ NEW REDIS API:</strong> Failed<br>
+                                    <small>Request error</small>
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="comparison-result different">
+                            <h4>❌ Responses Differ</h4>
+                            
+                            {% if result.comparison.summary %}
+                                <ul class="diff-summary">
+                                    {% if result.comparison.summary.values_changed > 0 %}
+                                        <li>{{ result.comparison.summary.values_changed }} value(s) changed</li>
+                                    {% endif %}
+                                    {% if result.comparison.summary.items_added > 0 %}
+                                        <li>{{ result.comparison.summary.items_added }} item(s) added in new API</li>
+                                    {% endif %}
+                                    {% if result.comparison.summary.items_removed > 0 %}
+                                        <li>{{ result.comparison.summary.items_removed }} item(s) removed in new API</li>
+                                    {% endif %}
+                                    {% if result.comparison.summary.type_changes > 0 %}
+                                        <li>{{ result.comparison.summary.type_changes }} type change(s)</li>
+                                    {% endif %}
+                                </ul>
+                            {% endif %}
+
+                            {% if result.comparison.differences %}
+                                <details>
+                                    <summary>📋 Show Detailed Differences</summary>
+                                    
+                                    {% if result.comparison.differences.values_changed %}
+                                        <h5 style="color: #FF9800;">Values Changed:</h5>
+                                        {% for key, change in result.comparison.differences.values_changed.items() %}
+                                            <div class="diff-item">
+                                                <strong>{{ key }}</strong><br>
+                                                <span class="diff-old">- {{ change.old_value }}</span><br>
+                                                <span class="diff-new">+ {{ change.new_value }}</span>
+                                            </div>
+                                        {% endfor %}
+                                    {% endif %}
+
+                                    {% if result.comparison.differences.items_added %}
+                                        <h5 style="color: #4CAF50;">Items Added (in New API):</h5>
+                                        {% for item in result.comparison.differences.items_added %}
+                                            <div class="diff-item" style="border-left-color: #4CAF50;">
+                                                <strong>✓ {{ item }}</strong>
+                                            </div>
+                                        {% endfor %}
+                                    {% endif %}
+
+                                    {% if result.comparison.differences.items_removed %}
+                                        <h5 style="color: #D32F2F;">Items Removed (from New API):</h5>
+                                        {% for item in result.comparison.differences.items_removed %}
+                                            <div class="diff-item" style="border-left-color: #D32F2F;">
+                                                <strong>✗ {{ item }}</strong>
+                                            </div>
+                                        {% endfor %}
+                                    {% endif %}
+                                </details>
+                            {% endif %}
+                        </div>
+
+                        <details>
+                            <summary>📄 Show Raw API Responses</summary>
+                            
+                            {% if result.old_api %}
+                                <h5>Old DB API Response:</h5>
+                                <pre>{{ result.old_api | tojson(indent=2) }}</pre>
+                            {% else %}
+                                <p style="color: #D32F2F;"><strong>Old DB API Response:</strong> Not available (request failed)</p>
+                            {% endif %}
+
+                            {% if result.new_api %}
+                                <h5>New Redis API Response:</h5>
+                                <pre>{{ result.new_api | tojson(indent=2) }}</pre>
+                            {% else %}
+                                <p style="color: #D32F2F;"><strong>New Redis API Response:</strong> Not available (request failed)</p>
+                            {% endif %}
+                        </details>
+                    </div>
+                {% endfor %}
+
+            {% if not has_different %}
+                <div class="tab-empty-state">
+                    <h3>No Different Responses</h3>
+                    <p>All farms are either identical or have errors.</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- ERRORS TAB -->
+        <div id="tab-errors" class="tab-content">
+            {% set has_errors = false %}
+            {% for result in results if result.comparison.error | default(false) %}
+                {% set has_errors = true %}
+                    <div class="farm-result">
+                        <h3>Farm ID: <code>{{ result.farm_id }}</code></h3>
+
+                        <div class="result-status">
+                            {% if result.old_api %}
+                                <div class="api-status success">
+                                    <strong>✓ OLD DB API:</strong> Success<br>
+                                    <small>{{ result.old_api | tojson | length }} bytes</small>
+                                </div>
+                            {% else %}
+                                <div class="api-status failure">
+                                    <strong>✗ OLD DB API:</strong> Failed<br>
+                                    <small>Request error</small>
+                                </div>
+                            {% endif %}
+
+                            {% if result.new_api %}
+                                <div class="api-status success">
+                                    <strong>✓ NEW REDIS API:</strong> Success<br>
+                                    <small>{{ result.new_api | tojson | length }} bytes</small>
+                                </div>
+                            {% else %}
+                                <div class="api-status failure">
+                                    <strong>✗ NEW REDIS API:</strong> Failed<br>
+                                    <small>Request error</small>
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="comparison-result error">
+                            <h4>❌ Comparison Error</h4>
+                            <p>{{ result.comparison.error }}</p>
+                        </div>
+
+                        {% if result.old_api or result.new_api %}
                             <details>
-                                <summary>📋 Show Detailed Differences</summary>
+                                <summary>📄 Show Raw API Responses</summary>
                                 
-                                {% if result.comparison.differences.values_changed %}
-                                    <h5 style="color: #FF9800;">Values Changed:</h5>
-                                    {% for key, change in result.comparison.differences.values_changed.items() %}
-                                        <div class="diff-item">
-                                            <strong>{{ key }}</strong><br>
-                                            <span class="diff-old">- {{ change.old_value }}</span><br>
-                                            <span class="diff-new">+ {{ change.new_value }}</span>
-                                        </div>
-                                    {% endfor %}
+                                {% if result.old_api %}
+                                    <h5>Old DB API Response:</h5>
+                                    <pre>{{ result.old_api | tojson(indent=2) }}</pre>
+                                {% else %}
+                                    <p style="color: #D32F2F;"><strong>Old DB API Response:</strong> Not available (request failed)</p>
                                 {% endif %}
 
-                                {% if result.comparison.differences.items_added %}
-                                    <h5 style="color: #4CAF50;">Items Added (in New API):</h5>
-                                    {% for item in result.comparison.differences.items_added %}
-                                        <div class="diff-item" style="border-left-color: #4CAF50;">
-                                            <strong>✓ {{ item }}</strong>
-                                        </div>
-                                    {% endfor %}
-                                {% endif %}
-
-                                {% if result.comparison.differences.items_removed %}
-                                    <h5 style="color: #D32F2F;">Items Removed (from New API):</h5>
-                                    {% for item in result.comparison.differences.items_removed %}
-                                        <div class="diff-item" style="border-left-color: #D32F2F;">
-                                            <strong>✗ {{ item }}</strong>
-                                        </div>
-                                    {% endfor %}
+                                {% if result.new_api %}
+                                    <h5>New Redis API Response:</h5>
+                                    <pre>{{ result.new_api | tojson(indent=2) }}</pre>
+                                {% else %}
+                                    <p style="color: #D32F2F;"><strong>New Redis API Response:</strong> Not available (request failed)</p>
                                 {% endif %}
                             </details>
                         {% endif %}
                     </div>
-                {% endif %}
-
-                <details>
-                    <summary>📄 Show Raw API Responses</summary>
-                    
-                    {% if result.old_api %}
-                        <h5>Old DB API Response:</h5>
-                        <pre>{{ result.old_api | tojson(indent=2) }}</pre>
-                    {% else %}
-                        <p style="color: #D32F2F;"><strong>Old DB API Response:</strong> Not available (request failed)</p>
-                    {% endif %}
-
-                    {% if result.new_api %}
-                        <h5>New Redis API Response:</h5>
-                        <pre>{{ result.new_api | tojson(indent=2) }}</pre>
-                    {% else %}
-                        <p style="color: #D32F2F;"><strong>New Redis API Response:</strong> Not available (request failed)</p>
-                    {% endif %}
-                </details>
-            </div>
-        {% endfor %}
+                {% endfor %}
+            
+            {% if not has_errors %}
+                <div class="tab-empty-state">
+                    <h3>No Errors</h3>
+                    <p>All farms completed without errors.</p>
+                </div>
+            {% endif %}
+        </div>
     </div>
 
     <div class="action-buttons">
@@ -454,4 +682,22 @@
         <a href="/apidocs/" class="btn btn-secondary">API Documentation (Swagger)</a>
     </div>
 </div>
+
+<script>
+function switchTab(tabName) {
+    // Hide all tab contents
+    const contents = document.querySelectorAll('.tab-content');
+    contents.forEach(content => content.classList.remove('active'));
+
+    // Remove active class from all buttons
+    const buttons = document.querySelectorAll('.tab-button');
+    buttons.forEach(button => button.classList.remove('active'));
+
+    // Show selected tab content
+    document.getElementById(`tab-${tabName}`).classList.add('active');
+
+    // Add active class to clicked button
+    event.target.classList.add('active');
+}
+</script>
 {% endblock %}

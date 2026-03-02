@@ -9,13 +9,24 @@ import re
 
 # Option 1: Normalize strings (remove trailing/leading spaces)
 def normalize(obj):
-        """Strip whitespace and normalize unicode"""
-        if isinstance(obj, str):
+    """Strip whitespace and normalize unicode"""
+    try:
+        if obj is None:
+            return None
+        elif isinstance(obj, str):
             return re.sub(r'\s+', ' ', obj).strip()  # Replace multiple spaces with single space
+        elif isinstance(obj, bool):
+            return obj  # Don't process booleans
+        elif isinstance(obj, (int, float)):
+            return obj  # Don't process numbers
         elif isinstance(obj, dict):
             return {k: normalize(v) for k, v in obj.items()}
         elif isinstance(obj, list):
             return [normalize(item) for item in obj]
+        else:
+            return obj  # Return as-is for other types
+    except Exception as e:
+        print(f"Error normalizing {type(obj)}: {e}")
         return obj
     
 def compare_responses(old_response, new_response):
@@ -29,62 +40,57 @@ def compare_responses(old_response, new_response):
     Returns:
         dict: Comparison result with detailed differences and summary.
     """
-    if old_response is None or new_response is None:
+    try:
+        if old_response is None or new_response is None:
+            return {
+                'identical': False,
+                'error': 'One or both API responses failed or returned None',
+                'has_differences': True,
+                'differences': {}
+            }
+
+        # Normalize responses
+        old_response = normalize(old_response)
+        new_response = normalize(new_response)
+        
+        # Use DeepDiff to compare the two responses
+        diff = DeepDiff(old_response, new_response, ignore_order=False,  
+                exclude_regex_paths=[
+                    r".*\['cattleData'\].*\['lactationEndDate'\]"
+                ])
+        
+        # Generate summary
+        is_identical = len(diff) == 0
+
+        # Convert DeepDiff object to dictionary for JSON serialization
+        diff_dict = diff.to_dict() if diff else {}
+
+        # Create result structure
+        result = {
+            'identical': is_identical,
+            'has_differences': not is_identical,
+            'differences': diff_dict,
+            'summary': {
+                'values_changed': len(diff.get('values_changed', {})),
+                'items_added': len(diff.get('items_added', [])),
+                'items_removed': len(diff.get('items_removed', [])),
+                'type_changes': len(diff.get('type_changes', {})),
+                'repetition_changes': len(diff.get('repetition_change', {}))
+            }
+        }
+
+        return result
+    
+    except Exception as e:
+        print(f"Error in compare_responses: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return {
             'identical': False,
-            'error': 'One or both API responses failed or returned None',
+            'error': f'Comparison error: {str(e)}',
             'has_differences': True,
             'differences': {}
         }
-
-
-
-    old_response = normalize(old_response)
-    new_response = normalize(new_response)
-    
-    # # DEBUG: Check the actual registeredBy values
-    # try:
-    #     old_reg = old_response["farmMetaDataModel"]["cattleData"][0].get("registeredBy", "N/A")
-    #     new_reg = new_response["farmMetaDataModel"]["cattleData"][0].get("registeredBy", "N/A")
-        
-    #     print(f"Old registeredBy: '{old_reg}'")
-    #     print(f"New registeredBy: '{new_reg}'")
-    #     print(f"Old repr: {repr(old_reg)}")
-    #     print(f"New repr: {repr(new_reg)}")
-    #     print(f"Old bytes: {old_reg.encode('utf-8')}")
-    #     print(f"New bytes: {new_reg.encode('utf-8')}")
-    #     print(f"Are they equal? {old_reg == new_reg}")
-    #     print(f"Old length: {len(old_reg)}, New length: {len(new_reg)}")
-    # except:
-    #     pass
-    
-    # Use DeepDiff to compare the two responses
-    diff = DeepDiff(old_response, new_response, ignore_order=False,  
-            exclude_regex_paths=[
-                r".*\['cattleData'\].*\['lactationEndDate'\]"
-            ])
-    
-    # Generate summary
-    is_identical = len(diff) == 0
-
-    # Convert DeepDiff object to dictionary for JSON serialization
-    diff_dict = diff.to_dict() if diff else {}
-
-    # Create result structure
-    result = {
-        'identical': is_identical,
-        'has_differences': not is_identical,
-        'differences': diff_dict,
-        'summary': {
-            'values_changed': len(diff.get('values_changed', {})),
-            'items_added': len(diff.get('items_added', [])),
-            'items_removed': len(diff.get('items_removed', [])),
-            'type_changes': len(diff.get('type_changes', {})),
-            'repetition_changes': len(diff.get('repetition_change', {}))
-        }
-    }
-
-    return result
 
 
 def get_comparison_summary(comparison_result):
