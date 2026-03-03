@@ -19,6 +19,7 @@ from src.comparison import compare_responses
 from src.reporter import Reporter
 from src.html_reporter import HTMLReporter
 from src.sql import get_recent_farm_ids
+from src.replication_monitor import get_replication_status
 
 
 # Initialize Flask app
@@ -510,6 +511,72 @@ def api_documentation():
     }), 200
 
 
+@app.route('/api/replication/table-counts', methods=['GET'])
+def replication_table_counts():
+    """
+    Get table row counts comparison across replication servers
+    
+    Compares table row counts from primary server (10.10.98.47) against 
+    secondary servers (10.10.98.66, 10.10.98.76, 10.10.98.100).
+    Executes usp_GetTableCount_ForMonitoring_Replication stored procedure.
+    ---
+    tags:
+      - Replication Monitoring
+    responses:
+      200:
+        description: Replication status with table count comparisons
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: success
+            timestamp:
+              type: string
+              format: date-time
+            primary_server:
+              type: string
+              example: 10.10.98.47
+            all_servers:
+              type: object
+              description: Table counts from each server
+            comparison_results:
+              type: object
+              description: Comparison of secondary servers against primary
+            summary:
+              type: object
+              properties:
+                total_servers:
+                  type: integer
+                  example: 4
+                servers_with_differences:
+                  type: integer
+                  example: 1
+                total_table_differences:
+                  type: integer
+                  example: 5
+                tables_analyzed:
+                  type: integer
+                  example: 42
+      500:
+        description: Server error during comparison
+    """
+    try:
+        results = get_replication_status()
+        return jsonify(results), 200
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"\n!!! REPLICATION MONITOR ERROR !!!")
+        print(error_trace)
+        print("!!! END ERROR !!!\n")
+        return jsonify({
+            'status': 'error',
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
+
+
 @app.errorhandler(404)
 def not_found(error):
     """Handle 404 errors."""
@@ -543,6 +610,18 @@ def internal_error(error):
 def dashboard():
     """Render the web UI dashboard."""
     return render_template('index.html')
+
+
+@app.route('/redis-status', methods=['GET'])
+def redis_status():
+    """Render the Redis Cache Status page."""
+    return render_template('redis-status.html')
+
+
+@app.route('/sql-status', methods=['GET'])
+def sql_status():
+    """Render the SQL Replication Status page."""
+    return render_template('sql-status.html')
 
 
 @app.route('/compare', methods=['POST'])

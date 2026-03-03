@@ -4,131 +4,52 @@
 
 {% block extra_css %}
 <style>
-    .dashboard {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 2rem;
-        margin-bottom: 2rem;
-    }
-
-    .card {
-        background: white;
-        padding: 2rem;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    }
-
-    .card h2 {
-        color: #667eea;
+    /* Section Headers */
+    .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
         margin-bottom: 1.5rem;
         padding-bottom: 1rem;
-        border-bottom: 2px solid #667eea;
     }
 
-    .form-group {
-        margin-bottom: 1.5rem;
-    }
-
-    label {
-        display: block;
+    .section-title {
+        font-size: 1.2rem;
         font-weight: bold;
-        margin-bottom: 0.5rem;
-        color: #333;
+        margin: 0;
     }
 
-    input[type="text"],
-    textarea {
-        width: 100%;
-        padding: 0.75rem;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        font-family: 'Courier New', monospace;
-        font-size: 0.95rem;
-    }
-
-    textarea {
-        resize: vertical;
-        min-height: 100px;
-    }
-
-    input[type="text"]:focus,
-    textarea:focus {
-        outline: none;
-        border-color: #667eea;
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-    }
-
-    .checkbox-group {
+    .section-status {
         display: flex;
         align-items: center;
         gap: 0.5rem;
-    }
-
-    input[type="checkbox"] {
-        width: 1.2rem;
-        height: 1.2rem;
-        cursor: pointer;
-    }
-
-    button {
-        background-color: #667eea;
-        color: white;
-        padding: 0.75rem 1.5rem;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 1rem;
-        font-weight: bold;
-        transition: background-color 0.3s;
-    }
-
-    button:hover {
-        background-color: #764ba2;
-    }
-
-    button:active {
-        opacity: 0.9;
-    }
-
-    .button-group {
-        display: flex;
-        gap: 1rem;
-    }
-
-    .button-secondary {
-        background-color: #999;
-    }
-
-    .button-secondary:hover {
-        background-color: #777;
-    }
-
-    .info-box {
-        background-color: #E8F5E9;
-        border-left: 4px solid #4CAF50;
-        padding: 1rem;
-        border-radius: 4px;
-        margin-bottom: 1rem;
-    }
-
-    .info-box p {
-        margin: 0;
-        color: #2E7D32;
-    }
-
-    .example {
-        background-color: #f5f5f5;
-        padding: 1rem;
-        border-radius: 4px;
-        font-family: 'Courier New', monospace;
         font-size: 0.9rem;
-        overflow-x: auto;
-        margin-top: 0.5rem;
+        color: #666;
     }
 
+    .status-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+
+    .status-dot.green { background-color: #4CAF50; }
+    .status-dot.orange { background-color: #FF9800; }
+    .status-dot.red { background-color: #F44336; }
+    .status-dot.pulsing {
+        animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+
+    /* Stats Grid - Common for both sections */
     .stats-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
         gap: 1rem;
         margin-bottom: 2rem;
     }
@@ -138,165 +59,303 @@
         padding: 1.5rem;
         border-radius: 8px;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        text-align: center;
     }
 
-    .stat-card h3 {
-        color: #667eea;
-        font-size: 2rem;
+    .stat-card h4 {
+        font-size: 0.85rem;
         margin-bottom: 0.5rem;
+        text-transform: uppercase;
     }
 
-    .stat-card p {
-        color: #666;
-        font-size: 0.9rem;
-    }
-
-    .feature-list {
-        list-style: none;
-    }
-
-    .feature-list li {
-        padding: 0.75rem 0;
-        padding-left: 1.5rem;
-        position: relative;
-    }
-
-    .feature-list li:before {
-        content: "✓";
-        position: absolute;
-        left: 0;
-        color: #4CAF50;
+    .stat-card .value {
+        font-size: 1.8rem;
         font-weight: bold;
+        color: #333;
     }
 
-    @media (max-width: 768px) {
-        .dashboard {
-            grid-template-columns: 1fr;
-        }
+    .stat-card .value.success { color: #4CAF50; }
+    .stat-card .value.warning { color: #FF9800; }
+    .stat-card .value.error { color: #F44336; }
+
+    /* Redis Section */
+    .redis-header {
+        border-bottom: 2px solid #667eea;
+    }
+
+    .redis-title {
+        color: #667eea;
+    }
+
+    .redis-header h4 {
+        color: #667eea;
+    }
+
+    /* SQL Section */
+    .sql-header {
+        border-bottom: 2px solid #764ba2;
+    }
+
+    .sql-title {
+        color: #764ba2;
+    }
+
+    .sql-header h4 {
+        color: #764ba2;
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="stats-grid">
-    <div class="stat-card">
-        <h3>6</h3>
-        <p>Available Endpoints</p>
-    </div>
-    <div class="stat-card">
-        <h3>∞</h3>
-        <p>Farms Can Monitor</p>
-    </div>
-    <div class="stat-card">
-        <h3>∞</h3>
-        <p>Concurrent Users</p>
-    </div>
-    <div class="stat-card">
-        <h3>100%</h3>
-        <p>API Coverage</p>
+<!-- Redis Cache Monitoring Section -->
+<div class="section-header redis-header">
+    <h2 class="section-title redis-title">Redis Cache Monitoring</h2>
+    <div class="section-status">
+        <span class="status-dot green pulsing" id="redis-connection-dot"></span>
+        <span>Last updated: <span id="last-update-time">--:--:--</span></span>
     </div>
 </div>
 
-<div class="dashboard">
-    <!-- Form Card -->
-    <div class="card">
-        <h2>Compare Farm Metadata</h2>
-        
-        <div class="info-box">
-            <p>Enter farm IDs to compare metadata between OLD DB API and NEW REDIS API</p>
-        </div>
-
-        <form method="POST" action="/compare">
-            <div class="form-group">
-                <label for="farm_ids">Farm IDs (one per line or comma-separated)</label>
-                <textarea 
-                    id="farm_ids"
-                    name="farm_ids" 
-                    placeholder="13f9ef67-19b0-4e3d-bec5-6dd15247492c&#10;farm-id-2&#10;farm-id-3"
-                    required></textarea>
-                <div class="example">
-                    Example: Enter farm IDs separated by new lines or commas
-                </div>
-            </div>
-
-
-
-            <div class="button-group">
-                <button type="submit">Compare Farms</button>
-                <button type="reset" class="button-secondary">Clear</button>
-            </div>
-
-            <div class="info-box" style="margin-top: 1.5rem;">
-                <p><strong>Note:</strong> Results are displayed inline in your browser. No files are saved to disk. Processing time depends on number of farms and API response times.</p>
-            </div>
-        </form>
+<div class="stats-grid" id="monitoring-stats">
+    <div class="stat-card redis-header">
+        <h4>Identical</h4>
+        <div class="value success" id="stat-identical">-</div>
     </div>
-
-    <!-- Info Card -->
-    <div class="card">
-        <h2>How It Works</h2>
-        
-        <h3 style="color: #666; font-size: 1.1rem; margin-top: 0;">Process Flow</h3>
-        <ol style="margin-left: 1.5rem; margin-bottom: 1.5rem;">
-            <li>Enter farm IDs to monitor</li>
-            <li>Generate JWT authentication token</li>
-            <li>Fetch metadata from OLD DB API</li>
-            <li>Fetch metadata from NEW REDIS API</li>
-            <li>Compare responses using DeepDiff</li>
-            <li>Generate reports and display results</li>
-        </ol>
-
-        <h3 style="color: #666; font-size: 1.1rem; margin-bottom: 1rem;">Features</h3>
-        <ul class="feature-list">
-            <li>Compare multiple farms in one request</li>
-            <li>Color-coded difference highlighting</li>
-            <li>Detailed summary statistics</li>
-            <li>Expandable comparison details</li>
-            <li>Real-time status display</li>
-            <li>No files written to disk</li>
-        </ul>
+    <div class="stat-card redis-header">
+        <h4>Different</h4>
+        <div class="value warning" id="stat-different">-</div>
+    </div>
+    <div class="stat-card redis-header">
+        <h4>Error</h4>
+        <div class="value error" id="stat-error">-</div>
+    </div>
+    <div class="stat-card redis-header">
+        <h4>Total Monitored</h4>
+        <div class="value" id="stat-total">-</div>
     </div>
 </div>
 
-<!-- Quick API Reference -->
-<div class="card" style="margin-top: 2rem;">
-    <h2>API Endpoints</h2>
-    
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
-        <div style="background-color: #f0f0f0; padding: 1rem; border-radius: 4px;">
-            <strong>POST /api/compare</strong>
-            <p style="margin: 0.5rem 0 0; font-size: 0.9rem; color: #666;">Compare multiple farms</p>
-        </div>
-
-        <div style="background-color: #f0f0f0; padding: 1rem; border-radius: 4px;">
-            <strong>GET /api/monitor/{farm_id}</strong>
-            <p style="margin: 0.5rem 0 0; font-size: 0.9rem; color: #666;">Monitor single farm</p>
-        </div>
-
-        <div style="background-color: #f0f0f0; padding: 1rem; border-radius: 4px;">
-            <strong>GET /health</strong>
-            <p style="margin: 0.5rem 0 0; font-size: 0.9rem; color: #666;">Health check</p>
-        </div>
-
-        <div style="background-color: #f0f0f0; padding: 1rem; border-radius: 4px;">
-            <strong>GET /api/config</strong>
-            <p style="margin: 0.5rem 0 0; font-size: 0.9rem; color: #666;">Get configuration</p>
-        </div>
-
-        <div style="background-color: #f0f0f0; padding: 1rem; border-radius: 4px;">
-            <strong>GET /apidocs/</strong>
-            <p style="margin: 0.5rem 0 0; font-size: 0.9rem; color: #666;">Interactive Swagger UI</p>
-        </div>
-
-        <div style="background-color: #f0f0f0; padding: 1rem; border-radius: 4px;">
-            <strong>POST /api/monitor</strong>
-            <p style="margin: 0.5rem 0 0; font-size: 0.9rem; color: #666;">Monitor farm (POST)</p>
-        </div>
-    </div>
-
-    <div style="margin-top: 1.5rem; padding: 1rem; background-color: #E3F2FD; border-radius: 4px;">
-        <p style="margin: 0;"><strong>📖 Interactive Documentation:</strong> Visit <a href="/apidocs/" style="color: #667eea;">Swagger UI</a> for complete API reference with try-it-out</p>
+<!-- SQL Replication Status Section -->
+<div class="section-header sql-header">
+    <h2 class="section-title sql-title">SQL Replication Status</h2>
+    <div class="section-status">
+        <span class="status-dot green" id="sql-connection-dot"></span>
+        <span>Last updated: <span id="sql-update-time">--:--:--</span></span>
     </div>
 </div>
+
+<div class="stats-grid" id="sql-stats">
+    <div class="stat-card sql-header">
+        <h4>Total Tables</h4>
+        <div class="value" id="sql-total-tables">-</div>
+    </div>
+    <div class="stat-card sql-header">
+        <h4>Servers Synced</h4>
+        <div class="value success" id="sql-servers-synced">-</div>
+    </div>
+    <div class="stat-card sql-header">
+        <h4>Servers w/ Diffs</h4>
+        <div class="value error" id="sql-servers-diff">-</div>
+    </div>
+    <div class="stat-card sql-header">
+        <h4>Total Differences</h4>
+        <div class="value warning" id="sql-total-diff">-</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Global monitoring state
+    let monitoringInterval = null;
+    const POLLING_INTERVAL = 30000; // 30 seconds
+
+    /**
+     * Fetch monitor data from /monitor endpoint and update the stat cards
+     */
+    async function fetchMonitorData() {
+        try {
+            const response = await fetch('/monitor');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const data = await response.json();
+            updateStatCards(data);
+            updateTimestamp();
+            // Update Redis connection status to connected
+            const connStatus = document.getElementById('redis-connection-status');
+            const connDot = document.getElementById('redis-connection-dot');
+            if (connStatus) {
+                connStatus.textContent = 'Connected';
+                connStatus.className = 'value success';
+            }
+            if (connDot) {
+                connDot.className = 'status-dot green pulsing';
+            }
+        } catch (error) {
+            console.error('Error fetching monitor data:', error);
+            // Update Redis connection status to error
+            const connStatus = document.getElementById('redis-connection-status');
+            const connDot = document.getElementById('redis-connection-dot');
+            if (connStatus) {
+                connStatus.textContent = 'Disconnected';
+                connStatus.className = 'value error';
+            }
+            if (connDot) {
+                connDot.className = 'status-dot red';
+                connDot.classList.remove('pulsing');
+            }
+        }
+    }
+
+    /**
+     * Update the stat cards with data from /monitor endpoint
+     * Response format: {"status": "...", "rows": [{"status": "Identical", "count": X}, ...], "total": X}
+     */
+    function updateStatCards(data) {
+        if (!data || !data.rows) return;
+
+        // Initialize counts
+        let counts = {
+            'Identical': 0,
+            'Different': 0,
+            'Error': 0
+        };
+
+        // Extract counts from rows
+        data.rows.forEach(row => {
+            if (row.status && row.count !== undefined) {
+                counts[row.status] = row.count;
+            }
+        });
+
+        // Update the stat cards
+        const identicalEl = document.getElementById('stat-identical');
+        const differentEl = document.getElementById('stat-different');
+        const errorEl = document.getElementById('stat-error');
+        const totalEl = document.getElementById('stat-total');
+
+        if (identicalEl) identicalEl.textContent = counts['Identical'];
+        if (differentEl) differentEl.textContent = counts['Different'];
+        if (errorEl) errorEl.textContent = counts['Error'];
+        if (totalEl) totalEl.textContent = data.total || 0;
+    }
+
+    /**
+     * Update the last updated timestamp
+     */
+    function updateTimestamp() {
+        const now = new Date();
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const seconds = String(now.getSeconds()).padStart(2, '0');
+        const timeString = `${hours}:${minutes}:${seconds}`;
+
+        const timeEl = document.getElementById('last-update-time');
+        if (timeEl) {
+            timeEl.textContent = timeString;
+        }
+    }
+
+    /**
+     * Start polling the /monitor endpoint every 30 seconds
+     */
+    function startMonitoring() {
+        console.log('Starting live monitoring...');
+        // Fetch immediately on start
+        fetchMonitorData();
+
+        // Then set up interval for every 30 seconds
+        monitoringInterval = setInterval(fetchMonitorData, POLLING_INTERVAL);
+        console.log('Live monitoring started. Updates every 30 seconds.');
+    }
+
+    /**
+     * Stop polling the /monitor endpoint
+     */
+    function stopMonitoring() {
+        if (monitoringInterval !== null) {
+            clearInterval(monitoringInterval);
+            monitoringInterval = null;
+            console.log('Live monitoring stopped.');
+        }
+    }
+
+    // Start monitoring when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        startMonitoring();
+        fetchSqlReplicationData();
+    });
+
+    // Cleanup when page is unloaded
+    window.addEventListener('beforeunload', function() {
+        stopMonitoring();
+    });
+
+    /**
+     * Fetch SQL replication data from /api/replication/table-counts
+     */
+    async function fetchSqlReplicationData() {
+        try {
+            const response = await fetch('/api/replication/table-counts');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const data = await response.json();
+            updateSqlStats(data);
+            updateSqlTimestamp();
+        } catch (error) {
+            console.error('Error fetching SQL replication data:', error);
+            // Update connection status to error
+            const connStatus = document.getElementById('sql-connection-status');
+            const connDot = document.getElementById('sql-connection-dot');
+            if (connStatus) {
+                connStatus.textContent = 'Disconnected';
+                connStatus.className = 'value error';
+            }
+            if (connDot) {
+                connDot.className = 'status-dot red';
+            }
+        }
+    }
+
+    /**
+     * Update SQL stats in the UI
+     */
+    function updateSqlStats(data) {
+        const summary = data.summary || {};
+
+        // Update stats
+        const totalTables = document.getElementById('sql-total-tables');
+        const serversSynced = document.getElementById('sql-servers-synced');
+        const serversDiff = document.getElementById('sql-servers-diff');
+        const totalDiff = document.getElementById('sql-total-diff');
+
+        if (totalTables) totalTables.textContent = summary.tables_analyzed || '-';
+        if (serversSynced) {
+            const synced = (summary.total_servers || 0) - (summary.servers_with_differences || 0);
+            serversSynced.textContent = synced;
+        }
+        if (serversDiff) serversDiff.textContent = summary.servers_with_differences || '0';
+        if (totalDiff) totalDiff.textContent = summary.total_table_differences || '0';
+    }
+
+    /**
+     * Update SQL timestamp
+     */
+    function updateSqlTimestamp() {
+        const now = new Date();
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const seconds = String(now.getSeconds()).padStart(2, '0');
+        const timeString = `${hours}:${minutes}:${seconds}`;
+
+        const timeEl = document.getElementById('sql-update-time');
+        if (timeEl) {
+            timeEl.textContent = timeString;
+        }
+    }
+
+    // Also poll SQL data every 30 seconds
+    setInterval(fetchSqlReplicationData, POLLING_INTERVAL);
+</script>
 {% endblock %}
