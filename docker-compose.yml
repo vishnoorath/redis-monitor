@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  redis-monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: redis-monitor
+    ports:
+      - "5000:5000"
+    environment:
+      # JWT Configuration
+      - JWT_SECRET=${JWT_SECRET:-12345678123456781234567812345678}
+      - TOKEN_EXPIRY_MINUTES=${TOKEN_EXPIRY_MINUTES:-1440}
+      # API Endpoints
+      - OLD_API_ENDPOINT=${OLD_API_ENDPOINT:-https://prodgateway.nitara.co.in/cm/GetFarmMetaDataNew}
+      - NEW_API_ENDPOINT=${NEW_API_ENDPOINT:-https://prodgateway.nitara.co.in/meta-data-api/farm-meta-data}
+      # Request Configuration
+      - REQUEST_TIMEOUT=${REQUEST_TIMEOUT:-30}
+      # JWT Payload Configuration
+      - JWT_USER_ID=${JWT_USER_ID}
+      - JWT_DEVICE_ID=${JWT_DEVICE_ID}
+      - JWT_LANGUAGE=${JWT_LANGUAGE:-EN}
+      - JWT_ROLE=${JWT_ROLE:-VETERINARIAN, FARMER, NITARA FIELD ADMIN}
+      - JWT_VERIFICATION_STATUS=${JWT_VERIFICATION_STATUS:-False}
+      - JWT_MODULES_ACCESS=${JWT_MODULES_ACCESS:-NOCKIST}
+      - JWT_FULL_NAME=${JWT_FULL_NAME:-Redis Monitor}
+      - JWT_ORGANIZATION_ID=${JWT_ORGANIZATION_ID}
+      - JWT_SESSION_CORRELATION_ID=${JWT_SESSION_CORRELATION_ID}
+      # Output Configuration
+      - OUTPUT_DIR=${OUTPUT_DIR:-results}
+      - VERBOSE=${VERBOSE:-False}
+      #SQL Server Configuration4
+      - SQL_SERVER=${SQL_SERVER:-localhost}
+      - SQL_PORT=${SQL_PORT:-1433}
+      - SQL_DATABASE=${SQL_DATABASE:-NitaraDB}
+      - SQL_USERNAME=${SQL_USERNAME:-sa}
+      - SQL_PASSWORD=${SQL_PASSWORD}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
