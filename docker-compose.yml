@@ -6,6 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: redis-monitor
+    image: redis-monitor:1.0.0
     ports:
       - "5000:5000"
     environment:

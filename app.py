@@ -18,6 +18,7 @@ from src.api_client import APIClient
 from src.comparison import compare_responses
 from src.reporter import Reporter
 from src.html_reporter import HTMLReporter
+from src.sql import get_recent_farm_ids
 
 
 # Initialize Flask app
@@ -115,6 +116,101 @@ def health_check():
         'service': 'Redis Monitor API',
         'timestamp': datetime.now().isoformat()
     }), 200
+
+
+@app.route('/monitor', methods=['GET'])
+def momitor_from_db():
+    """
+    Monitor recently updated farms from SQL Server database.
+    Fetches farm IDs from SQL Server and compares them against APIs.
+    ---
+    tags:
+      - Monitoring
+    responses:
+      200:
+        description: Comparison results for recently updated farms
+      500:
+        description: Error processing request
+    """
+    try:
+        # Get recently updated farm IDs from SQL Server
+        farm_ids = get_recent_farm_ids()
+
+        if not farm_ids:
+            return jsonify({
+                'status': 'success',
+                'message': 'No recently updated farms found',
+                'farm_ids': [],
+                'results': []
+            }), 200
+
+        # Monitor each farm
+        results = []
+        test_run_id = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+        for farm_id in farm_ids:
+            result = monitor_single_farm(farm_id)
+            results.append(result)
+
+        # Calculate statistics and collect farm IDs
+        total = len(results)
+
+        identical_farms = []
+        different_farms = []
+        errors_farms = []
+        diff_count = 0
+
+        for r in results:
+            farm_id = r.get('farm_id')
+            if r.get('status') == 'error':
+                errors_farms.append(farm_id)
+            elif r.get('status') == 'success' and r['comparison'].get('identical', False):
+                identical_farms.append(farm_id)
+            elif r.get('status') == 'success' and r['comparison'].get('has_differences', False):
+                different_farms.append(farm_id)
+                # Count actual differences from summary
+                diff_summary = r.get('comparison', {}).get('summary', {})
+                diff_count += diff_summary.get('values_changed', 0) + diff_summary.get('items_added', 0) + diff_summary.get('items_removed', 0)
+
+        identical = len(identical_farms)
+        different = len(different_farms)
+        errors = len(errors_farms)
+
+        # Grafana-friendly format
+        rows = [
+            {'status': 'Identical', 'count': identical, 'farmIds' : identical_farms},
+            {
+                'status': 'Different',
+                'count': different,
+                'farmIds': different_farms,
+                'differences': diff_count
+            },
+            {
+                'status': 'Error',
+                'count': errors,
+                'farmIds': errors_farms
+            }
+        ]
+
+        # Return JSON response
+        return jsonify({
+            'status': 'success',
+            'test_run_id': test_run_id,
+            'timestamp': datetime.now().isoformat(),
+            'total': total,
+            'rows': rows
+        }), 200
+
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"\n!!! MOMITOR ERROR !!!")
+        print(error_trace)
+        print("!!! END ERROR !!!\n")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
 
 
 @app.route('/api/compare', methods=['POST'])
