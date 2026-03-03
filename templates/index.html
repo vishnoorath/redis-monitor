@@ -145,7 +145,7 @@
 
     .comparison-table th,
     .comparison-table td {
-        padding: 0.5rem 0.75rem;
+        padding: 0.3rem 0.5rem;
         text-align: left;
         border-bottom: 1px solid #eee;
     }
@@ -288,6 +288,61 @@
         max-height: 350px;
         overflow-y: auto;
     }
+
+    /* Pagination Styles */
+    .pagination {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.75rem 0;
+        margin-top: 0.5rem;
+        border-top: 1px solid #eee;
+    }
+
+    .pagination-info {
+        font-size: 0.85rem;
+        color: #666;
+    }
+
+    .pagination-controls {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+    }
+
+    .pagination-btn {
+        padding: 0.4rem 0.75rem;
+        border: 1px solid #ddd;
+        background: white;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        transition: all 0.2s;
+    }
+
+    .pagination-btn:hover:not(:disabled) {
+        background-color: #f5f5f5;
+        border-color: #764ba2;
+        color: #764ba2;
+    }
+
+    .pagination-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .pagination-btn.active {
+        background-color: #764ba2;
+        color: white;
+        border-color: #764ba2;
+    }
+
+    .page-size-select {
+        padding: 0.3rem 0.5rem;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 0.85rem;
+    }
 </style>
 {% endblock %}
 
@@ -372,6 +427,16 @@
     // Global monitoring state
     let monitoringInterval = null;
     const POLLING_INTERVAL = 30000; // 30 seconds
+    const DEFAULT_PAGE_SIZE = 10;
+
+    // Pagination state
+    let paginationState = {
+        'mismatched': { currentPage: 1, pageSize: DEFAULT_PAGE_SIZE, data: [] },
+        'matched': { currentPage: 1, pageSize: DEFAULT_PAGE_SIZE, data: [] }
+    };
+
+    // Store primary server for pagination
+    let globalPrimaryServer = '';
 
     /**
      * Fetch monitor data from /monitor endpoint and update the stat cards
@@ -551,7 +616,6 @@
      */
     function displayTableDiffs(data) {
         const container = document.getElementById('table-diff-container');
-        const tabsContainer = document.getElementById('diff-tabs');
         if (!container) return;
 
         // Clear container
@@ -564,6 +628,7 @@
 
         const comparisonResults = data.comparison_results || {};
         const primaryServer = data.primary_server;
+        globalPrimaryServer = primaryServer;
 
         if (Object.keys(comparisonResults).length === 0) {
             container.innerHTML = '<p style="text-align: center; color: #999; padding: 2rem;">No comparison data available</p>';
@@ -601,6 +666,10 @@
         if (mismatchCountEl) mismatchCountEl.textContent = allMismatchedTables.length;
         if (matchCountEl) matchCountEl.textContent = allMatchedTables.length;
 
+        // Reset pagination state
+        paginationState['mismatched'] = { currentPage: 1, pageSize: DEFAULT_PAGE_SIZE, data: allMismatchedTables };
+        paginationState['matched'] = { currentPage: 1, pageSize: DEFAULT_PAGE_SIZE, data: allMatchedTables };
+
         // Create tab content for Mismatched
         const mismatchedTab = document.createElement('div');
         mismatchedTab.className = 'tab-content active';
@@ -609,7 +678,7 @@
         if (allMismatchedTables.length === 0) {
             mismatchedTab.innerHTML = '<p style="text-align: center; color: #999; padding: 2rem;">No mismatched tables found</p>';
         } else {
-            mismatchedTab.innerHTML = createComparisonTable(allMismatchedTables, primaryServer, 'mismatch');
+            mismatchedTab.innerHTML = createPagedTable(allMismatchedTables, primaryServer, 'mismatched');
         }
 
         // Create tab content for Matched
@@ -620,7 +689,7 @@
         if (allMatchedTables.length === 0) {
             matchedTab.innerHTML = '<p style="text-align: center; color: #999; padding: 2rem;">No matched tables found</p>';
         } else {
-            matchedTab.innerHTML = createComparisonTable(allMatchedTables, primaryServer, 'match');
+            matchedTab.innerHTML = createPagedTable(allMatchedTables, primaryServer, 'matched');
         }
 
         container.appendChild(mismatchedTab);
@@ -631,13 +700,22 @@
     }
 
     /**
-     * Create comparison table HTML
+     * Create comparison table HTML with pagination
      */
-    function createComparisonTable(tables, primaryServer, defaultClass) {
-        const wrapper = document.createElement('div');
-        wrapper.className = 'table-wrapper';
+    function createPagedTable(tables, primaryServer, tabType) {
+        const state = paginationState[tabType];
+        const pageSize = state.pageSize;
+        const currentPage = state.currentPage;
+        const totalItems = tables.length;
+        const totalPages = Math.ceil(totalItems / pageSize);
 
-        let html = `
+        // Get items for current page
+        const startIndex = (currentPage - 1) * pageSize;
+        const endIndex = Math.min(startIndex + pageSize, totalItems);
+        const pagedTables = tables.slice(startIndex, endIndex);
+
+        let html = '<div class="table-wrapper">';
+        html += `
             <table class="comparison-table">
                 <thead>
                     <tr>
@@ -652,7 +730,7 @@
                 <tbody>
         `;
 
-        for (const tableData of tables) {
+        for (const tableData of pagedTables) {
             const rowClass = tableData.match ? 'match' : 'mismatch';
             const statusBadge = tableData.match ?
                 '<span class="status-badge match">Match</span>' :
@@ -677,9 +755,91 @@
             `;
         }
 
-        html += '</tbody></table>';
-        wrapper.innerHTML = html;
-        return wrapper.outerHTML;
+        html += '</tbody></table></div>';
+
+        // Add pagination controls
+        html += `
+            <div class="pagination">
+                <div class="pagination-info">
+                    Showing ${startIndex + 1}-${endIndex} of ${totalItems} entries
+                </div>
+                <div class="pagination-controls">
+                    <select class="page-size-select" onchange="changePageSize('${tabType}', this.value)">
+                        <option value="10" ${pageSize === 10 ? 'selected' : ''}>10 / page</option>
+                        <option value="25" ${pageSize === 25 ? 'selected' : ''}>25 / page</option>
+                        <option value="50" ${pageSize === 50 ? 'selected' : ''}>50 / page</option>
+                        <option value="100" ${pageSize === 100 ? 'selected' : ''}>100 / page</option>
+                    </select>
+                    <button class="pagination-btn" onclick="changePage('${tabType}', ${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>Prev</button>
+        `;
+
+        // Page number buttons
+        const maxButtons = 5;
+        let startPage = Math.max(1, currentPage - Math.floor(maxButtons / 2));
+        let endPage = Math.min(totalPages, startPage + maxButtons - 1);
+
+        if (endPage - startPage < maxButtons - 1) {
+            startPage = Math.max(1, endPage - maxButtons + 1);
+        }
+
+        if (startPage > 1) {
+            html += `<button class="pagination-btn" onclick="changePage('${tabType}', 1)">1</button>`;
+            if (startPage > 2) {
+                html += `<span style="padding: 0 0.25rem;">...</span>`;
+            }
+        }
+
+        for (let i = startPage; i <= endPage; i++) {
+            html += `<button class="pagination-btn ${i === currentPage ? 'active' : ''}" onclick="changePage('${tabType}', ${i})">${i}</button>`;
+        }
+
+        if (endPage < totalPages) {
+            if (endPage < totalPages - 1) {
+                html += `<span style="padding: 0 0.25rem;">...</span>`;
+            }
+            html += `<button class="pagination-btn" onclick="changePage('${tabType}', ${totalPages})">${totalPages}</button>`;
+        }
+
+        html += `
+                    <button class="pagination-btn" onclick="changePage('${tabType}', ${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>Next</button>
+                </div>
+            </div>
+        `;
+
+        return html;
+    }
+
+    /**
+     * Change page for a specific tab
+     */
+    function changePage(tabType, page) {
+        const state = paginationState[tabType];
+        const totalPages = Math.ceil(state.data.length / state.pageSize);
+
+        if (page < 1 || page > totalPages) return;
+
+        state.currentPage = page;
+
+        // Re-render the table for the specific tab
+        const tabContent = document.getElementById('tab-' + tabType);
+        if (tabContent && globalPrimaryServer) {
+            tabContent.innerHTML = createPagedTable(state.data, globalPrimaryServer, tabType);
+        }
+    }
+
+    /**
+     * Change page size for a specific tab
+     */
+    function changePageSize(tabType, newSize) {
+        paginationState[tabType].pageSize = parseInt(newSize);
+        paginationState[tabType].currentPage = 1;
+
+        // Re-render the table for the specific tab
+        const state = paginationState[tabType];
+        const tabContent = document.getElementById('tab-' + tabType);
+        if (tabContent && globalPrimaryServer) {
+            tabContent.innerHTML = createPagedTable(state.data, globalPrimaryServer, tabType);
+        }
     }
 
     /**
