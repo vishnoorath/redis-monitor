@@ -85,17 +85,6 @@ class ReplicationMonitor:
 
             # Try the stored procedure first, fallback to direct query
             try:
-                # Execute the stored procedure
-                cursor.execute("{CALL usp_GetTableCount_ForMonitoring_Replication}")
-                rows = cursor.fetchall()
-
-                # Check if cursor has results
-                if not cursor.description or not rows:
-                    raise Exception("Stored procedure returned no results, trying direct query")
-
-            except Exception as e:
-                # Fallback: Use direct query to get table counts
-                print(f"  Stored procedure failed, using direct query: {e}")
                 cursor.execute("""
                     SELECT
                         t.NAME AS TableName,
@@ -109,6 +98,13 @@ class ReplicationMonitor:
                     ORDER BY s.Name, t.Name
                 """)
                 rows = cursor.fetchall()
+            except pyodbc.Error as e:
+                # fail with error
+                result['status'] = 'error'
+                result['error'] = f"Stored procedure error: {str(e)}"
+                    
+                return result
+                
 
             # Process results
             for row in rows:

@@ -102,6 +102,192 @@
     .sql-header h4 {
         color: #764ba2;
     }
+
+    /* Table Diff Section */
+    .table-diff-section {
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        padding: 1.5rem;
+        margin-top: 1rem;
+    }
+
+    .table-diff-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+
+    .table-diff-title {
+        font-size: 1rem;
+        font-weight: bold;
+        color: #764ba2;
+    }
+
+    .table-diff-container {
+        max-height: 400px;
+        overflow-y: auto;
+    }
+
+    .comparison-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+    }
+
+    .comparison-table thead {
+        background-color: #764ba2;
+        color: white;
+        position: sticky;
+        top: 0;
+    }
+
+    .comparison-table th,
+    .comparison-table td {
+        padding: 0.5rem 0.75rem;
+        text-align: left;
+        border-bottom: 1px solid #eee;
+    }
+
+    .comparison-table tbody tr:hover {
+        background-color: #f9f9f9;
+    }
+
+    .comparison-table .match {
+        background-color: #E8F5E9;
+    }
+
+    .comparison-table .mismatch {
+        background-color: #FFEBEE;
+    }
+
+    .diff-badge {
+        display: inline-block;
+        padding: 0.2rem 0.5rem;
+        border-radius: 3px;
+        font-size: 0.75rem;
+        font-weight: bold;
+    }
+
+    .diff-badge.positive {
+        background-color: #C8E6C9;
+        color: #1B5E20;
+    }
+
+    .diff-badge.negative {
+        background-color: #FFCDD2;
+        color: #B71C1C;
+    }
+
+    .server-section {
+        margin-bottom: 1.5rem;
+    }
+
+    .server-title {
+        font-weight: bold;
+        color: #764ba2;
+        margin-bottom: 0.5rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid #eee;
+    }
+
+    .status-badge {
+        display: inline-block;
+        padding: 0.2rem 0.5rem;
+        border-radius: 3px;
+        font-size: 0.75rem;
+        font-weight: bold;
+    }
+
+    .status-badge.match {
+        background-color: #4CAF50;
+        color: white;
+    }
+
+    .status-badge.mismatch {
+        background-color: #F44336;
+        color: white;
+    }
+
+    /* Tabs Styles */
+    .diff-tabs {
+        display: flex;
+        gap: 0;
+        margin-bottom: 1rem;
+        border-bottom: 2px solid #e0e0e0;
+    }
+
+    .diff-tab {
+        padding: 0.75rem 1.5rem;
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #666;
+        position: relative;
+        transition: color 0.2s;
+    }
+
+    .diff-tab:hover {
+        color: #764ba2;
+    }
+
+    .diff-tab.active {
+        color: #764ba2;
+    }
+
+    .diff-tab.active::after {
+        content: '';
+        position: absolute;
+        bottom: -2px;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background-color: #764ba2;
+    }
+
+    .diff-tab .tab-count {
+        display: inline-block;
+        margin-left: 0.5rem;
+        padding: 0.1rem 0.4rem;
+        border-radius: 10px;
+        font-size: 0.75rem;
+    }
+
+    .diff-tab .tab-count.mismatch-count {
+        background-color: #FFEBEE;
+        color: #F44336;
+    }
+
+    .diff-tab .tab-count.match-count {
+        background-color: #E8F5E9;
+        color: #4CAF50;
+    }
+
+    .diff-tab.active .tab-count.mismatch-count {
+        background-color: #F44336;
+        color: white;
+    }
+
+    .diff-tab.active .tab-count.match-count {
+        background-color: #4CAF50;
+        color: white;
+    }
+
+    .tab-content {
+        display: none;
+    }
+
+    .tab-content.active {
+        display: block;
+    }
+
+    .tab-content .table-wrapper {
+        max-height: 350px;
+        overflow-y: auto;
+    }
 </style>
 {% endblock %}
 
@@ -159,6 +345,24 @@
     <div class="stat-card sql-header">
         <h4>Total Differences</h4>
         <div class="value warning" id="sql-total-diff">-</div>
+    </div>
+</div>
+
+<!-- SQL Table Differences Section -->
+<div class="table-diff-section" id="table-diff-section">
+    <div class="table-diff-header">
+        <span class="table-diff-title">Table Differences Detail</span>
+    </div>
+    <div class="diff-tabs" id="diff-tabs">
+        <button class="diff-tab active" data-tab="mismatched">
+            Mismatched <span class="tab-count mismatch-count" id="tab-mismatch-count">0</span>
+        </button>
+        <button class="diff-tab" data-tab="matched">
+            Matched <span class="tab-count match-count" id="tab-match-count">0</span>
+        </button>
+    </div>
+    <div class="table-diff-container" id="table-diff-container">
+        <p style="text-align: center; color: #999; padding: 2rem;">Loading table comparison data...</p>
     </div>
 </div>
 {% endblock %}
@@ -337,6 +541,169 @@
         }
         if (serversDiff) serversDiff.textContent = summary.servers_with_differences || '0';
         if (totalDiff) totalDiff.textContent = summary.total_table_differences || '0';
+
+        // Update table diff section
+        displayTableDiffs(data);
+    }
+
+    /**
+     * Display table differences in the UI with tabs
+     */
+    function displayTableDiffs(data) {
+        const container = document.getElementById('table-diff-container');
+        const tabsContainer = document.getElementById('diff-tabs');
+        if (!container) return;
+
+        // Clear container
+        container.innerHTML = '';
+
+        if (data.status !== 'success') {
+            container.innerHTML = `<div style="background-color: #FFEBEE; padding: 1rem; border-radius: 4px; color: #B71C1C;"><strong>Error:</strong> ${data.error || 'Unknown error'}</div>`;
+            return;
+        }
+
+        const comparisonResults = data.comparison_results || {};
+        const primaryServer = data.primary_server;
+
+        if (Object.keys(comparisonResults).length === 0) {
+            container.innerHTML = '<p style="text-align: center; color: #999; padding: 2rem;">No comparison data available</p>';
+            return;
+        }
+
+        // Collect all tables across all servers
+        let allMismatchedTables = [];
+        let allMatchedTables = [];
+
+        // Display comparison for each secondary server
+        for (const [serverName, comparisonData] of Object.entries(comparisonResults)) {
+            if (comparisonData.status === 'error') continue;
+
+            const tables = comparisonData.tables || {};
+
+            for (const [tableName, tableData] of Object.entries(tables)) {
+                const tableEntry = {
+                    server: serverName,
+                    tableName: tableName,
+                    ...tableData
+                };
+
+                if (tableData.match) {
+                    allMatchedTables.push(tableEntry);
+                } else {
+                    allMismatchedTables.push(tableEntry);
+                }
+            }
+        }
+
+        // Update tab counts
+        const mismatchCountEl = document.getElementById('tab-mismatch-count');
+        const matchCountEl = document.getElementById('tab-match-count');
+        if (mismatchCountEl) mismatchCountEl.textContent = allMismatchedTables.length;
+        if (matchCountEl) matchCountEl.textContent = allMatchedTables.length;
+
+        // Create tab content for Mismatched
+        const mismatchedTab = document.createElement('div');
+        mismatchedTab.className = 'tab-content active';
+        mismatchedTab.id = 'tab-mismatched';
+
+        if (allMismatchedTables.length === 0) {
+            mismatchedTab.innerHTML = '<p style="text-align: center; color: #999; padding: 2rem;">No mismatched tables found</p>';
+        } else {
+            mismatchedTab.innerHTML = createComparisonTable(allMismatchedTables, primaryServer, 'mismatch');
+        }
+
+        // Create tab content for Matched
+        const matchedTab = document.createElement('div');
+        matchedTab.className = 'tab-content';
+        matchedTab.id = 'tab-matched';
+
+        if (allMatchedTables.length === 0) {
+            matchedTab.innerHTML = '<p style="text-align: center; color: #999; padding: 2rem;">No matched tables found</p>';
+        } else {
+            matchedTab.innerHTML = createComparisonTable(allMatchedTables, primaryServer, 'match');
+        }
+
+        container.appendChild(mismatchedTab);
+        container.appendChild(matchedTab);
+
+        // Add tab click handlers
+        setupTabHandlers();
+    }
+
+    /**
+     * Create comparison table HTML
+     */
+    function createComparisonTable(tables, primaryServer, defaultClass) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'table-wrapper';
+
+        let html = `
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>Table Name</th>
+                        <th>Server</th>
+                        <th style="text-align: right;">${primaryServer}</th>
+                        <th style="text-align: right;">Secondary</th>
+                        <th style="text-align: right;">Diff</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        for (const tableData of tables) {
+            const rowClass = tableData.match ? 'match' : 'mismatch';
+            const statusBadge = tableData.match ?
+                '<span class="status-badge match">Match</span>' :
+                '<span class="status-badge mismatch">Mismatch</span>';
+
+            let diffBadge = '';
+            if (typeof tableData.difference === 'number') {
+                const diffClass = tableData.difference > 0 ? 'positive' : (tableData.difference < 0 ? 'negative' : '');
+                const sign = tableData.difference > 0 ? '+' : '';
+                diffBadge = `<span class="diff-badge ${diffClass}">${sign}${tableData.difference}</span>`;
+            }
+
+            html += `
+                <tr class="${rowClass}">
+                    <td><strong>${tableData.tableName}</strong></td>
+                    <td>${tableData.server}</td>
+                    <td style="text-align: right;">${tableData.primary_count !== null ? tableData.primary_count.toLocaleString() : 'N/A'}</td>
+                    <td style="text-align: right;">${tableData.secondary_count !== null ? tableData.secondary_count.toLocaleString() : 'N/A'}</td>
+                    <td style="text-align: right;">${diffBadge}</td>
+                    <td>${statusBadge}</td>
+                </tr>
+            `;
+        }
+
+        html += '</tbody></table>';
+        wrapper.innerHTML = html;
+        return wrapper.outerHTML;
+    }
+
+    /**
+     * Setup tab click handlers
+     */
+    function setupTabHandlers() {
+        const tabs = document.querySelectorAll('.diff-tab');
+        tabs.forEach(tab => {
+            tab.addEventListener('click', function() {
+                // Remove active class from all tabs
+                tabs.forEach(t => t.classList.remove('active'));
+                // Add active class to clicked tab
+                this.classList.add('active');
+
+                // Hide all tab content
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+
+                // Show corresponding tab content
+                const tabName = this.getAttribute('data-tab');
+                document.getElementById('tab-' + tabName).classList.add('active');
+            });
+        });
     }
 
     /**
