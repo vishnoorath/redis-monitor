@@ -8,59 +8,85 @@ from typing import Dict, List, Any
 from deepdiff import DeepDiff
 from datetime import datetime
 
+# Import settings database
+from src import settings_db
+
 
 class ReplicationMonitor:
     """Monitor table row counts across multiple SQL Server instances."""
 
-    # Database servers to monitor (JSON object array)
-    SERVERS = [
-        {'server': '10.10.98.47', 'password': 't5!bT5AZ5Q@coqZ'},
-        {'server': '10.10.98.76', 'password': 'Gt(#@987RTGF'},
-    ]
+    def __init__(self):
+        """Initialize with settings from database."""
+        pass
 
-    def __init__(self, username: str = 'sa', password: str = 't5!bT5AZ5Q@coqZ', 
-                 database: str = 'NitaraDB', port: str = '1433'):
+    def get_default_credentials(self) -> Dict[str, Any]:
         """
-        Initialize replication monitor with connection parameters.
-        
-        Args:
-            username: SQL Server username
-            password: SQL Server password
-            database: Database name to query
-            port: SQL Server port (default 1433)
+        Get default credentials from SQLite settings database.
+
+        Returns:
+            Dict with default username, password, database, port
         """
-        self.username = username
-        self.password = password
-        self.database = database
-        self.port = port
+        return {
+            'username': settings_db.get_setting_parsed('DB_USERNAME') or 'sa',
+            'password': settings_db.get_setting_parsed('DB_PASSWORD') or 't5!bT5AZ5Q@coqZ',
+            'database': settings_db.get_setting_parsed('DB_NAME') or 'NitaraDB',
+            'port': settings_db.get_setting_parsed('DB_PORT') or '1433',
+        }
 
-    def _build_connection_string(self, server: str) -> str:
-        """Build ODBC connection string for a given server."""
-        return (
-            f"DRIVER={{ODBC Driver 18 for SQL Server}};"
-            f"SERVER={server},{self.port};"
-            f"DATABASE={self.database};"
-            f"UID={self.username};"
-            f"PWD={self.password};"
-            f"TrustServerCertificate=yes;"
-            f"Encrypt=yes;"
-        )
+    def get_servers(self) -> List[Dict[str, Any]]:
+        """
+        Get server configurations from SQLite settings database.
 
-    def _get_table_counts(self, server: str, password: str = None) -> Dict[str, Any]:
+        Returns:
+            List of server configurations with server, user, password, db, isPrimary
+        """
+        # Get default credentials
+        defaults = self.get_default_credentials()
+
+        # Try to get servers from SQLite settings
+        servers = settings_db.get_setting_parsed('SERVERS')
+
+        if servers and isinstance(servers, list) and len(servers) > 0:
+            # Fill in defaults for any missing fields
+            for server in servers:
+                if 'user' not in server or not server['user']:
+                    server['user'] = defaults['username']
+                if 'password' not in server or not server['password']:
+                    server['password'] = defaults['password']
+                if 'db' not in server or not server['db']:
+                    server['db'] = defaults['database']
+            return servers
+
+        # Fallback to default servers if not configured in database
+        return [
+            {'server': '10.10.98.47', 'user': defaults['username'], 'password': defaults['password'], 'db': defaults['database'], 'isPrimary': True},
+            {'server': '10.10.98.76', 'user': defaults['username'], 'password': defaults['password'], 'db': defaults['database'], 'isPrimary': False},
+        ]
+
+    def _get_table_counts(self, server: str, server_config: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Execute stored procedure on a specific server and get table counts.
 
         Args:
             server: Server address/name
-            password: Server-specific password (optional, uses self.password if not provided)
+            server_config: Server configuration dict with user, password, db (optional, uses defaults if not provided)
 
         Returns:
             Dict with server info and table counts, or error details
         """
+        # Get default credentials
+        defaults = self.get_default_credentials()
+
+        # Use server-specific values or fallback to defaults
+        db_user = server_config.get('user', defaults['username']) if server_config else defaults['username']
+        db_password = server_config.get('password', defaults['password']) if server_config else defaults['password']
+        db_name = server_config.get('db', defaults['database']) if server_config else defaults['database']
+        db_port = defaults['port']
+
         result = {
             'server': server,
             'status': 'success',
-            'database': self.database,
+            'database': db_name,
             'timestamp': datetime.now().isoformat(),
             'tables': {},
             'total_rows': 0,
@@ -69,14 +95,12 @@ class ReplicationMonitor:
         }
 
         try:
-            # Use server-specific password or fallback to default
-            conn_password = password if password else self.password
             connection_string = (
                 f"DRIVER={{ODBC Driver 18 for SQL Server}};"
-                f"SERVER={server},{self.port};"
-                f"DATABASE={self.database};"
-                f"UID={self.username};"
-                f"PWD={conn_password};"
+                f"SERVER={server},{db_port};"
+                f"DATABASE={db_name};"
+                f"UID={db_user};"
+                f"PWD={db_password};"
                 f"TrustServerCertificate=yes;"
                 f"Encrypt=yes;"
             )
@@ -130,18 +154,30 @@ class ReplicationMonitor:
     def compare_servers(self) -> Dict[str, Any]:
         """
         Get table counts from all servers and compare against primary server (10.10.98.47).
-        
+
         Returns:
             Dict with comparison results and differences highlighted
         """
+        # Get servers from settings database
+        servers = self.get_servers()
+
+        # Find primary server (first one marked as isPrimary, or first in list)
+        primary_server_config = None
+        for s in servers:
+            if s.get('isPrimary', False):
+                primary_server_config = s
+                break
+        if not primary_server_config and servers:
+            primary_server_config = servers[0]
+
         results = {
             'status': 'success',
             'timestamp': datetime.now().isoformat(),
-            'primary_server': self.SERVERS[0]['server'],
+            'primary_server': primary_server_config['server'] if primary_server_config else servers[0]['server'],
             'all_servers': {},
             'comparison_results': {},
             'summary': {
-                'total_servers': len(self.SERVERS),
+                'total_servers': len(servers),
                 'servers_with_differences': 0,
                 'total_table_differences': 0,
                 'tables_analyzed': 0
@@ -151,11 +187,10 @@ class ReplicationMonitor:
 
         # Get table counts from all servers
         print("Fetching table counts from all servers...")
-        for server_config in self.SERVERS:
+        for server_config in servers:
             server = server_config['server']
-            password = server_config['password']
             print(f"  Connecting to {server}...")
-            server_data = self._get_table_counts(server, password)
+            server_data = self._get_table_counts(server, server_config)
             results['all_servers'][server] = server_data
 
             if server_data['status'] == 'error':
@@ -165,7 +200,7 @@ class ReplicationMonitor:
                 })
 
         # Get primary server data
-        primary_server = self.SERVERS[0]['server']
+        primary_server = primary_server_config['server'] if primary_server_config else servers[0]['server']
         primary_data = results['all_servers'][primary_server]
         if primary_data['status'] != 'success':
             results['status'] = 'error'
@@ -174,7 +209,10 @@ class ReplicationMonitor:
 
         # Compare each server against primary
         print("Comparing servers...")
-        for server_config in self.SERVERS[1:]:  # Skip primary server
+        for server_config in servers:  # Compare all servers against primary
+            server = server_config['server']
+            if server == primary_server:
+                continue  # Skip primary server itself
             server = server_config['server']
             server_data = results['all_servers'][server]
 

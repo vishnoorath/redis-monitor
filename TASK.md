@@ -64,3 +64,25 @@ diff = DeepDiff(obj_a, obj_b)
 print(diff)
 
 ```
+
+### Task : TD-UI-001
+
+Implement the following
+
+- Settings should have a feature to store the following JSON Structure in an SQLLite DB
+
+```json
+
+    # Database servers to monitor (JSON object array)
+    SERVERS = [
+        {'server': '10.10.98.47', 'user': 'sa', 'password': 't5!bT5AZ5Q@coqZ', 'db': 'NitaraDB', 'isPrimary': True},
+        {'server': '10.10.98.76', 'user': 'sa', 'password': 'Gt(#@987RTGF', 'db': 'NitaraDB', 'isPrimary': False},
+    ]
+```
+   This must be stored as in a table ApplicationSettings with key Value pairs as columns
+   The table columns will be
+    key     VARCHAR, PRIMARY NOT NULL,
+    value   NVARCHAR, NOT NULL
+    valueType VARCHAR NO NULL 
+
+   The value could store STRING, JSON, INT, FLOAT , BOOL , DATE etc. The type stored is indicated i the valueType column.

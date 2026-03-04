@@ -38,16 +38,21 @@
 
     input[type="number"],
     input[type="email"],
+    input[type="text"],
+    input[type="password"],
     textarea {
         width: 100%;
         padding: 0.75rem;
         border: 1px solid #ddd;
         border-radius: 4px;
         font-size: 0.95rem;
+        box-sizing: border-box;
     }
 
     input[type="number"]:focus,
     input[type="email"]:focus,
+    input[type="text"]:focus,
+    input[type="password"]:focus,
     textarea:focus {
         outline: none;
         border-color: #667eea;
@@ -96,6 +101,19 @@
         background-color: #777;
     }
 
+    .button-danger {
+        background-color: #dc3545;
+    }
+
+    .button-danger:hover {
+        background-color: #c82333;
+    }
+
+    .button-small {
+        padding: 0.4rem 0.8rem;
+        font-size: 0.85rem;
+    }
+
     .success-message {
         background-color: #E8F5E9;
         border-left: 4px solid #4CAF50;
@@ -131,6 +149,101 @@
         background-color: #667eea;
         color: white;
         border-color: #667eea;
+    }
+
+    /* Server Configuration Styles */
+    .server-list {
+        margin-top: 1rem;
+    }
+
+    .server-item {
+        background: #f8f9fa;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        position: relative;
+    }
+
+    .server-item.primary {
+        border-color: #4CAF50;
+        background: #E8F5E9;
+    }
+
+    .server-item-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.75rem;
+    }
+
+    .server-item-title {
+        font-weight: 600;
+        color: #333;
+    }
+
+    .server-item-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .server-fields {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+    }
+
+    .server-field {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .server-field.full-width {
+        grid-column: 1 / -1;
+    }
+
+    .server-field label {
+        font-size: 0.85rem;
+        font-weight: 500;
+        margin-bottom: 0.25rem;
+        color: #555;
+    }
+
+    .server-field input {
+        padding: 0.5rem;
+        font-size: 0.9rem;
+    }
+
+    .checkbox-field {
+        flex-direction: row;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .checkbox-field input {
+        width: auto;
+    }
+
+    .checkbox-field label {
+        margin-bottom: 0;
+    }
+
+    .add-server-form {
+        background: #f8f9fa;
+        border: 2px dashed #ddd;
+        border-radius: 4px;
+        padding: 1.5rem;
+        margin-top: 1rem;
+    }
+
+    .add-server-form h3 {
+        margin-top: 0;
+        margin-bottom: 1rem;
+        color: #667eea;
+    }
+
+    .hidden {
+        display: none;
     }
 </style>
 {% endblock %}
@@ -181,6 +294,54 @@
             <div class="help-text">Enter one email address per line</div>
         </div>
 
+        <div class="form-group">
+            <label>
+                Database Servers to Monitor
+                <span>(Configure database servers for monitoring)</span>
+            </label>
+
+            <div class="server-list" id="serverList">
+                <!-- Server items will be rendered here -->
+            </div>
+
+            <button type="button" class="button-secondary" onclick="showAddServerForm()" style="margin-top: 1rem;">
+                + Add Server
+            </button>
+
+            <div class="add-server-form hidden" id="addServerForm">
+                <h3>Add New Server</h3>
+                <div class="server-fields">
+                    <div class="server-field">
+                        <label for="newServer">Server IP/Hostname</label>
+                        <input type="text" id="newServer" placeholder="10.10.98.47">
+                    </div>
+                    <div class="server-field">
+                        <label for="newDb">Database Name</label>
+                        <input type="text" id="newDb" placeholder="NitaraDB">
+                    </div>
+                    <div class="server-field">
+                        <label for="newUser">Username</label>
+                        <input type="text" id="newUser" placeholder="sa">
+                    </div>
+                    <div class="server-field">
+                        <label for="newPassword">Password</label>
+                        <input type="password" id="newPassword" placeholder="Enter password">
+                    </div>
+                    <div class="server-field checkbox-field">
+                        <input type="checkbox" id="newIsPrimary">
+                        <label for="newIsPrimary">Primary Server</label>
+                    </div>
+                </div>
+                <div class="button-group">
+                    <button type="button" onclick="addServer()">Add Server</button>
+                    <button type="button" class="button-secondary" onclick="hideAddServerForm()">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Hidden input to store servers JSON -->
+        <input type="hidden" id="serversJson" name="servers_json" value="">
+
         <div class="button-group">
             <button type="submit">Save Settings</button>
             <button type="reset" class="button-secondary">Reset</button>
@@ -191,6 +352,9 @@
 
 {% block extra_js %}
 <script>
+    // Server data from server-side
+    const servers = {{ settings.servers | tojson }};
+
     function setRefresh(value) {
         document.getElementById('refresh_frequency').value = value;
 
@@ -210,6 +374,99 @@
     document.addEventListener('DOMContentLoaded', function() {
         const currentValue = parseInt(document.getElementById('refresh_frequency').value);
         setRefresh(currentValue);
+        renderServers();
     });
+
+    function renderServers() {
+        const serverList = document.getElementById('serverList');
+        const serversJsonInput = document.getElementById('serversJson');
+
+        // Update hidden input with current servers
+        serversJsonInput.value = JSON.stringify(servers);
+
+        if (servers.length === 0) {
+            serverList.innerHTML = '<p class="help-text">No servers configured. Click "Add Server" to add one.</p>';
+            return;
+        }
+
+        serverList.innerHTML = servers.map((server, index) => `
+            <div class="server-item ${server.isPrimary ? 'primary' : ''}">
+                <div class="server-item-header">
+                    <span class="server-item-title">${server.server}${server.isPrimary ? ' (Primary)' : ''}</span>
+                    <div class="server-item-actions">
+                        <button type="button" class="button-small button-danger" onclick="removeServer(${index})">Remove</button>
+                    </div>
+                </div>
+                <div class="server-fields">
+                    <div class="server-field">
+                        <label>Server</label>
+                        <span>${server.server}</span>
+                    </div>
+                    <div class="server-field">
+                        <label>Database</label>
+                        <span>${server.db}</span>
+                    </div>
+                    <div class="server-field">
+                        <label>Username</label>
+                        <span>${server.user}</span>
+                    </div>
+                    <div class="server-field">
+                        <label>Password</label>
+                        <span>${'*'.repeat(server.password ? server.password.length : 0)}</span>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function showAddServerForm() {
+        document.getElementById('addServerForm').classList.remove('hidden');
+    }
+
+    function hideAddServerForm() {
+        document.getElementById('addServerForm').classList.add('hidden');
+        // Clear form fields
+        document.getElementById('newServer').value = '';
+        document.getElementById('newDb').value = '';
+        document.getElementById('newUser').value = '';
+        document.getElementById('newPassword').value = '';
+        document.getElementById('newIsPrimary').checked = false;
+    }
+
+    function addServer() {
+        const server = document.getElementById('newServer').value.trim();
+        const db = document.getElementById('newDb').value.trim();
+        const user = document.getElementById('newUser').value.trim();
+        const password = document.getElementById('newPassword').value;
+        const isPrimary = document.getElementById('newIsPrimary').checked;
+
+        if (!server || !db || !user) {
+            alert('Please fill in server, database, and username');
+            return;
+        }
+
+        // If this is marked as primary, unmark other primaries
+        if (isPrimary) {
+            servers.forEach(s => s.isPrimary = false);
+        }
+
+        servers.push({
+            server: server,
+            db: db,
+            user: user,
+            password: password,
+            isPrimary: isPrimary
+        });
+
+        hideAddServerForm();
+        renderServers();
+    }
+
+    function removeServer(index) {
+        if (confirm('Are you sure you want to remove this server?')) {
+            servers.splice(index, 1);
+            renderServers();
+        }
+    }
 </script>
 {% endblock %}

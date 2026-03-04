@@ -20,6 +20,7 @@ from src.reporter import Reporter
 from src.html_reporter import HTMLReporter
 from src.sql import get_recent_farm_ids
 from src.replication_monitor import get_replication_status
+from src import settings_db
 
 
 # Initialize Flask app
@@ -41,6 +42,19 @@ swagger = Flasgger(app)
 api_client = APIClient()
 reporter = Reporter()
 Config.ensure_output_dir()
+
+# Initialize settings database
+settings_db.init_settings_db()
+
+# Migrate existing settings from environment variables if needed
+import os
+if not settings_db.get_setting('REFRESH_FREQUENCY'):
+    refresh_freq = os.environ.get('REFRESH_FREQUENCY', '30')
+    settings_db.set_setting('REFRESH_FREQUENCY', refresh_freq, 'INT')
+
+if not settings_db.get_setting('NOTIFIED_EMAILS'):
+    notified_emails = os.environ.get('NOTIFIED_EMAILS', '')
+    settings_db.set_setting('NOTIFIED_EMAILS', notified_emails, 'STRING')
 
 
 def monitor_single_farm(farm_id):
@@ -471,40 +485,103 @@ def get_config():
     }), 200
 
 
-@app.route('/api/settings', methods=['GET'])
+@app.route('/api/settings', methods=['GET', 'POST', 'DELETE'])
 def get_settings():
     """
-    Get current application settings
+    Get, save, or delete application settings
     ---
     tags:
       - System
-    responses:
-      200:
-        description: Current settings
+    parameters:
+      - name: key
+        in: query
+        type: string
+        required: false
+        description: Optional key to get specific setting
+      - name: body
+        in: body
         schema:
           type: object
           properties:
-            status:
+            key:
               type: string
-              example: success
-            settings:
-              type: object
-              properties:
-                refresh_frequency:
-                  type: integer
-                  example: 30
-                notified_emails:
-                  type: string
-                  example: admin@example.com
+            value:
+              type: string
+            valueType:
+              type: string
+              enum: [STRING, JSON, INT, FLOAT, BOOL, DATE]
+    responses:
+      200:
+        description: Current settings
     """
-    import os
-    return jsonify({
-        'status': 'success',
-        'settings': {
-            'refresh_frequency': int(os.environ.get('REFRESH_FREQUENCY', '30')),
-            'notified_emails': os.environ.get('NOTIFIED_EMAILS', '')
-        }
-    }), 200
+    if request.method == 'GET':
+        # Get specific key or all settings
+        key = request.args.get('key')
+        if key:
+            setting = settings_db.get_setting(key)
+            if setting:
+                value = settings_db.get_setting_parsed(key)
+                return jsonify({
+                    'status': 'success',
+                    'key': setting['key'],
+                    'value': value,
+                    'valueType': setting['valueType']
+                }), 200
+            return jsonify({
+                'status': 'error',
+                'message': f'Setting "{key}" not found'
+            }), 404
+
+        # Get all settings
+        all_settings = settings_db.get_all_settings()
+        settings_dict = {}
+        for s in all_settings:
+            value = settings_db.get_setting_parsed(s['key'])
+            settings_dict[s['key']] = value
+
+        return jsonify({
+            'status': 'success',
+            'settings': settings_dict
+        }), 200
+
+    elif request.method == 'POST':
+        # Save a setting
+        data = request.get_json()
+        if not data or 'key' not in data or 'value' not in data:
+            return jsonify({
+                'status': 'error',
+                'message': 'Missing key or value'
+            }), 400
+
+        key = data['key']
+        value = data['value']
+        value_type = data.get('valueType', 'STRING')
+
+        settings_db.set_setting(key, value, value_type)
+        return jsonify({
+            'status': 'success',
+            'message': f'Setting "{key}" saved successfully'
+        }), 200
+
+    elif request.method == 'DELETE':
+        # Delete a setting
+        key = request.args.get('key')
+        if not key:
+            return jsonify({
+                'status': 'error',
+                'message': 'Missing key parameter'
+            }), 400
+
+        deleted = settings_db.delete_setting(key)
+        if deleted:
+            return jsonify({
+                'status': 'success',
+                'message': f'Setting "{key}" deleted successfully'
+            }), 200
+        return jsonify({
+            'status': 'error',
+            'message': f'Setting "{key}" not found'
+        }), 404
 
 
 @app.route('/api/docs', methods=['GET'])
@@ -664,28 +741,41 @@ def sql_status():
 def settings():
     """
     Render and handle settings page.
-    Allows configuration of refresh frequency and notified emails.
+    Allows configuration of refresh frequency, notified emails, and server configurations.
     """
-    import os
+    # Load settings from SQLite or use defaults
+    refresh_frequency = settings_db.get_setting_parsed('REFRESH_FREQUENCY') or 30
+    notified_emails = settings_db.get_setting_parsed('NOTIFIED_EMAILS') or ''
+    servers = settings_db.get_setting_parsed('SERVERS') or []
 
-    # Load settings from environment or use defaults
     settings_data = {
-        'refresh_frequency': int(os.environ.get('REFRESH_FREQUENCY', '30')),
-        'notified_emails': os.environ.get('NOTIFIED_EMAILS', '')
+        'refresh_frequency': refresh_frequency,
+        'notified_emails': notified_emails,
+        'servers': servers
     }
 
     if request.method == 'POST':
         # Get form data
         refresh_frequency = request.form.get('refresh_frequency', '30')
         notified_emails = request.form.get('notified_emails', '')
+        servers_json = request.form.get('servers_json', '[]')
 
-        # Update settings
+        # Update settings in SQLite
+        settings_db.set_setting('REFRESH_FREQUENCY', int(refresh_frequency), 'INT')
+        settings_db.set_setting('NOTIFIED_EMAILS', notified_emails, 'STRING')
+
+        # Parse servers JSON if provided
+        import json
+        try:
+            servers_list = json.loads(servers_json) if servers_json else []
+            settings_db.set_setting('SERVERS', servers_list, 'JSON')
+        except json.JSONDecodeError:
+            pass  # Keep existing servers if invalid JSON
+
+        # Reload settings
         settings_data['refresh_frequency'] = int(refresh_frequency)
         settings_data['notified_emails'] = notified_emails
-
-        # Save to environment (in production, you'd save to a config file or database)
-        os.environ['REFRESH_FREQUENCY'] = str(refresh_frequency)
-        os.environ['NOTIFIED_EMAILS'] = notified_emails
+        settings_data['servers'] = settings_db.get_setting_parsed('SERVERS') or []
 
         # Render with success message
         return render_template('settings.html', settings=settings_data, success=True)
