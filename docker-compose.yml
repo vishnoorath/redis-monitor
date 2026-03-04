@@ -37,6 +37,9 @@ services:
       - SQL_DATABASE=${SQL_DATABASE:-NitaraDB}
       - SQL_USERNAME=${SQL_USERNAME:-sa}
       - SQL_PASSWORD=${SQL_PASSWORD}
+      # Settings Configuration
+      - REFRESH_FREQUENCY=${REFRESH_FREQUENCY:-30}
+      - NOTIFIED_EMAILS=${NOTIFIED_EMAILS:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]

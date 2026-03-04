@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Redis Monitor{% endblock %}
+
+{% block extra_css %}
+<style>
+    .settings-card {
+        background: white;
+        padding: 2rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        margin-bottom: 2rem;
+    }
+
+    .settings-card h2 {
+        color: #667eea;
+        margin-bottom: 1.5rem;
+        padding-bottom: 1rem;
+        border-bottom: 2px solid #667eea;
+    }
+
+    .form-group {
+        margin-bottom: 1.5rem;
+    }
+
+    .form-group label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        color: #333;
+    }
+
+    .form-group label span {
+        font-weight: normal;
+        color: #666;
+        font-size: 0.85rem;
+    }
+
+    input[type="number"],
+    input[type="email"],
+    textarea {
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 0.95rem;
+    }
+
+    input[type="number"]:focus,
+    input[type="email"]:focus,
+    textarea:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    textarea {
+        resize: vertical;
+        min-height: 100px;
+        font-family: inherit;
+    }
+
+    .help-text {
+        font-size: 0.8rem;
+        color: #666;
+        margin-top: 0.25rem;
+    }
+
+    .button-group {
+        display: flex;
+        gap: 1rem;
+        margin-top: 1.5rem;
+    }
+
+    button {
+        background-color: #667eea;
+        color: white;
+        padding: 0.75rem 1.5rem;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 1rem;
+        font-weight: bold;
+        transition: background-color 0.3s;
+    }
+
+    button:hover {
+        background-color: #764ba2;
+    }
+
+    .button-secondary {
+        background-color: #999;
+    }
+
+    .button-secondary:hover {
+        background-color: #777;
+    }
+
+    .success-message {
+        background-color: #E8F5E9;
+        border-left: 4px solid #4CAF50;
+        padding: 1rem;
+        border-radius: 4px;
+        margin-bottom: 1rem;
+        color: #2E7D32;
+    }
+
+    .refresh-options {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-top: 0.5rem;
+    }
+
+    .refresh-option {
+        padding: 0.5rem 1rem;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background: white;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-size: 0.9rem;
+    }
+
+    .refresh-option:hover {
+        border-color: #667eea;
+        color: #667eea;
+    }
+
+    .refresh-option.selected {
+        background-color: #667eea;
+        color: white;
+        border-color: #667eea;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="settings-card">
+    <h2>Settings</h2>
+
+    {% if success %}
+    <div class="success-message">
+        Settings saved successfully!
+    </div>
+    {% endif %}
+
+    <form method="POST" action="/settings">
+        <div class="form-group">
+            <label for="refresh_frequency">
+                Refresh Frequency
+                <span>(How often to poll data automatically)</span>
+            </label>
+            <input type="number"
+                   id="refresh_frequency"
+                   name="refresh_frequency"
+                   value="{{ settings.refresh_frequency | default(30) }}"
+                   min="10"
+                   max="300"
+                   step="5"
+                   required>
+            <div class="help-text">Enter value in seconds (minimum 10, maximum 300)</div>
+            <div class="refresh-options">
+                <button type="button" class="refresh-option" onclick="setRefresh(10)">10 sec</button>
+                <button type="button" class="refresh-option" onclick="setRefresh(30)">30 sec</button>
+                <button type="button" class="refresh-option" onclick="setRefresh(60)">1 min</button>
+                <button type="button" class="refresh-option" onclick="setRefresh(120)">2 min</button>
+                <button type="button" class="refresh-option" onclick="setRefresh(300)">5 min</button>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="notified_emails">
+                Notified Emails
+                <span>(Email addresses to receive alerts, one per line)</span>
+            </label>
+            <textarea
+                id="notified_emails"
+                name="notified_emails"
+                placeholder="admin@example.com&#10;support@example.com">{{ settings.notified_emails | default('') }}</textarea>
+            <div class="help-text">Enter one email address per line</div>
+        </div>
+
+        <div class="button-group">
+            <button type="submit">Save Settings</button>
+            <button type="reset" class="button-secondary">Reset</button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function setRefresh(value) {
+        document.getElementById('refresh_frequency').value = value;
+
+        // Update selected state
+        document.querySelectorAll('.refresh-option').forEach(btn => {
+            btn.classList.remove('selected');
+            if (parseInt(btn.textContent) === value ||
+                (value === 60 && btn.textContent === '1 min') ||
+                (value === 120 && btn.textContent === '2 min') ||
+                (value === 300 && btn.textContent === '5 min')) {
+                btn.classList.add('selected');
+            }
+        });
+    }
+
+    // Set initial selected state
+    document.addEventListener('DOMContentLoaded', function() {
+        const currentValue = parseInt(document.getElementById('refresh_frequency').value);
+        setRefresh(currentValue);
+    });
+</script>
+{% endblock %}

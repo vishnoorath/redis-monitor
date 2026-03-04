@@ -471,6 +471,42 @@ def get_config():
     }), 200
 
 
+@app.route('/api/settings', methods=['GET'])
+def get_settings():
+    """
+    Get current application settings
+    ---
+    tags:
+      - System
+    responses:
+      200:
+        description: Current settings
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: success
+            settings:
+              type: object
+              properties:
+                refresh_frequency:
+                  type: integer
+                  example: 30
+                notified_emails:
+                  type: string
+                  example: admin@example.com
+    """
+    import os
+    return jsonify({
+        'status': 'success',
+        'settings': {
+            'refresh_frequency': int(os.environ.get('REFRESH_FREQUENCY', '30')),
+            'notified_emails': os.environ.get('NOTIFIED_EMAILS', '')
+        }
+    }), 200
+
+
 @app.route('/api/docs', methods=['GET'])
 def api_documentation():
     """
@@ -622,6 +658,39 @@ def redis_status():
 def sql_status():
     """Render the SQL Replication Status page."""
     return render_template('sql-status.html')
+
+
+@app.route('/settings', methods=['GET', 'POST'])
+def settings():
+    """
+    Render and handle settings page.
+    Allows configuration of refresh frequency and notified emails.
+    """
+    import os
+
+    # Load settings from environment or use defaults
+    settings_data = {
+        'refresh_frequency': int(os.environ.get('REFRESH_FREQUENCY', '30')),
+        'notified_emails': os.environ.get('NOTIFIED_EMAILS', '')
+    }
+
+    if request.method == 'POST':
+        # Get form data
+        refresh_frequency = request.form.get('refresh_frequency', '30')
+        notified_emails = request.form.get('notified_emails', '')
+
+        # Update settings
+        settings_data['refresh_frequency'] = int(refresh_frequency)
+        settings_data['notified_emails'] = notified_emails
+
+        # Save to environment (in production, you'd save to a config file or database)
+        os.environ['REFRESH_FREQUENCY'] = str(refresh_frequency)
+        os.environ['NOTIFIED_EMAILS'] = notified_emails
+
+        # Render with success message
+        return render_template('settings.html', settings=settings_data, success=True)
+
+    return render_template('settings.html', settings=settings_data)
 
 
 @app.route('/compare', methods=['POST'])
