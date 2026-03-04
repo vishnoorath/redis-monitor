@@ -40,6 +40,8 @@ services:
       # Settings Configuration
       - REFRESH_FREQUENCY=${REFRESH_FREQUENCY:-30}
       - NOTIFIED_EMAILS=${NOTIFIED_EMAILS:-}
+    volumes:
+      - ./settings.db:/app/settings.db
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]

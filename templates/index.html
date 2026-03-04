@@ -126,8 +126,59 @@
     }
 
     .table-diff-container {
-        max-height: 400px;
+        max-height: 600px;
         overflow-y: auto;
+    }
+
+    /* Server Comparison Section */
+    .server-comparison-section {
+        margin-bottom: 1.5rem;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .comparison-section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        font-weight: bold;
+    }
+
+    .comparison-section-header.error {
+        background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+    }
+
+    .comparison-section-header .vs-badge {
+        background-color: rgba(255,255,255,0.2);
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        margin-right: 0.5rem;
+    }
+
+    .status-badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+
+    .status-badge.success {
+        background-color: #4CAF50;
+        color: white;
+    }
+
+    .status-badge.error {
+        background-color: #FF5722;
+        color: white;
+    }
+
+    .comparison-section-content {
+        padding: 0;
     }
 
     .comparison-table {
@@ -408,14 +459,6 @@
     <div class="table-diff-header">
         <span class="table-diff-title">Table Differences Detail</span>
     </div>
-    <div class="diff-tabs" id="diff-tabs">
-        <button class="diff-tab active" data-tab="mismatched">
-            Mismatched <span class="tab-count mismatch-count" id="tab-mismatch-count">0</span>
-        </button>
-        <button class="diff-tab" data-tab="matched">
-            Matched <span class="tab-count match-count" id="tab-match-count">0</span>
-        </button>
-    </div>
     <div class="table-diff-container" id="table-diff-container">
         <p style="text-align: center; color: #999; padding: 2rem;">Loading table comparison data...</p>
     </div>
@@ -635,7 +678,7 @@
     }
 
     /**
-     * Display table differences in the UI with tabs
+     * Display table differences in the UI - separate sections for each Primary vs Secondary
      */
     function displayTableDiffs(data) {
         const container = document.getElementById('table-diff-container');
@@ -658,68 +701,128 @@
             return;
         }
 
-        // Collect all tables across all servers
-        let allMismatchedTables = [];
-        let allMatchedTables = [];
-
-        // Display comparison for each secondary server
+        // Display separate section for each secondary server
         for (const [serverName, comparisonData] of Object.entries(comparisonResults)) {
-            if (comparisonData.status === 'error') continue;
+            if (comparisonData.status === 'error') {
+                // Add error section for this server
+                const errorSection = document.createElement('div');
+                errorSection.className = 'server-comparison-section';
+                errorSection.innerHTML = `
+                    <div class="comparison-section-header error">
+                        <span><span class="vs-badge">PRIMARY</span> vs ${serverName}</span>
+                        <span class="status-badge error">Connection Error</span>
+                    </div>
+                    <div class="comparison-section-content">
+                        <div style="background-color: #FFF3E0; padding: 1rem; border-radius: 4px; color: #E65100;">
+                            <strong>Error:</strong> ${comparisonData.error}
+                        </div>
+                    </div>
+                `;
+                container.appendChild(errorSection);
+                continue;
+            }
 
+            // Filter mismatched tables only
             const tables = comparisonData.tables || {};
+            const mismatchedTables = [];
 
             for (const [tableName, tableData] of Object.entries(tables)) {
-                const tableEntry = {
-                    server: serverName,
-                    tableName: tableName,
-                    ...tableData
-                };
-
-                if (tableData.match) {
-                    allMatchedTables.push(tableEntry);
-                } else {
-                    allMismatchedTables.push(tableEntry);
+                if (!tableData.match) {
+                    mismatchedTables.push({
+                        server: serverName,
+                        tableName: tableName,
+                        ...tableData
+                    });
                 }
             }
+
+            // Create section for this server
+            const section = document.createElement('div');
+            section.className = 'server-comparison-section';
+
+            const hasDifferences = mismatchedTables.length > 0;
+            const statusBadge = hasDifferences
+                ? `<span class="status-badge error">${mismatchedTables.length} Difference${mismatchedTables.length !== 1 ? 's' : ''}</span>`
+                : `<span class="status-badge success">In Sync</span>`;
+
+            section.innerHTML = `
+                <div class="comparison-section-header">
+                    <span><span class="vs-badge">PRIMARY</span> vs ${serverName}</span>
+                    ${statusBadge}
+                </div>
+            `;
+
+            if (!hasDifferences) {
+                section.innerHTML += `
+                    <div class="comparison-section-content">
+                        <div style="text-align: center; color: #4CAF50; padding: 2rem;">
+                            All tables are in sync with primary server
+                        </div>
+                    </div>
+                `;
+            } else {
+                // Create table for mismatched tables
+                let tableHtml = `
+                    <div class="comparison-section-content">
+                        <table class="comparison-table">
+                            <thead>
+                                <tr>
+                                    <th>Table Name</th>
+                                    <th style="text-align: right; color: #4CAF50;">Primary (${primaryServer})</th>
+                                    <th style="text-align: right; color: #667eea;">${serverName}</th>
+                                    <th style="text-align: right;">Difference</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+
+                for (const table of mismatchedTables) {
+                    let statusBadgeTable = '';
+                    let rowClass = '';
+
+                    if (table.status === 'mismatch') {
+                        statusBadgeTable = 'Mismatch';
+                        rowClass = 'table-mismatch';
+                    } else if (table.status === 'missing') {
+                        statusBadgeTable = 'Missing';
+                        rowClass = 'table-missing';
+                    } else if (table.status === 'extra') {
+                        statusBadgeTable = 'Extra';
+                        rowClass = 'table-missing';
+                    }
+
+                    let diffBadge = '';
+                    if (typeof table.difference === 'number') {
+                        const diffClass = table.difference > 0 ? 'diff-positive' : (table.difference < 0 ? 'diff-negative' : '');
+                        const sign = table.difference > 0 ? '+' : '';
+                        diffBadge = `<span class="diff-badge ${diffClass}">${sign}${table.difference}</span>`;
+                    } else if (table.difference === '(table missing)' || table.difference === '(extra table)') {
+                        diffBadge = `<span style="color: #E65100; font-weight: 600;">${table.difference}</span>`;
+                    }
+
+                    tableHtml += `
+                        <tr class="${rowClass}">
+                            <td><strong>${table.tableName}</strong></td>
+                            <td style="text-align: right;">${table.primary_count !== null ? table.primary_count.toLocaleString() : 'N/A'}</td>
+                            <td style="text-align: right;">${table.secondary_count !== null ? table.secondary_count.toLocaleString() : 'N/A'}</td>
+                            <td style="text-align: right;">${diffBadge}</td>
+                            <td>${statusBadgeTable}</td>
+                        </tr>
+                    `;
+                }
+
+                tableHtml += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+
+                section.innerHTML += tableHtml;
+            }
+
+            container.appendChild(section);
         }
-
-        // Update tab counts
-        const mismatchCountEl = document.getElementById('tab-mismatch-count');
-        const matchCountEl = document.getElementById('tab-match-count');
-        if (mismatchCountEl) mismatchCountEl.textContent = allMismatchedTables.length;
-        if (matchCountEl) matchCountEl.textContent = allMatchedTables.length;
-
-        // Reset pagination state
-        paginationState['mismatched'] = { currentPage: 1, pageSize: DEFAULT_PAGE_SIZE, data: allMismatchedTables };
-        paginationState['matched'] = { currentPage: 1, pageSize: DEFAULT_PAGE_SIZE, data: allMatchedTables };
-
-        // Create tab content for Mismatched
-        const mismatchedTab = document.createElement('div');
-        mismatchedTab.className = 'tab-content active';
-        mismatchedTab.id = 'tab-mismatched';
-
-        if (allMismatchedTables.length === 0) {
-            mismatchedTab.innerHTML = '<p style="text-align: center; color: #999; padding: 2rem;">No mismatched tables found</p>';
-        } else {
-            mismatchedTab.innerHTML = createPagedTable(allMismatchedTables, primaryServer, 'mismatched');
-        }
-
-        // Create tab content for Matched
-        const matchedTab = document.createElement('div');
-        matchedTab.className = 'tab-content';
-        matchedTab.id = 'tab-matched';
-
-        if (allMatchedTables.length === 0) {
-            matchedTab.innerHTML = '<p style="text-align: center; color: #999; padding: 2rem;">No matched tables found</p>';
-        } else {
-            matchedTab.innerHTML = createPagedTable(allMatchedTables, primaryServer, 'matched');
-        }
-
-        container.appendChild(mismatchedTab);
-        container.appendChild(matchedTab);
-
-        // Add tab click handlers
-        setupTabHandlers();
     }
 
     /**

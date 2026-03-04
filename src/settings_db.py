@@ -10,6 +10,7 @@ from typing import Any, Optional
 
 # Database file path
 DB_PATH = Path(__file__).parent.parent / 'settings.db'
+print(f"[DEBUG] settings_db.py - DB_PATH: {DB_PATH.resolve()}")
 
 
 def get_connection() -> sqlite3.Connection:
@@ -86,6 +87,7 @@ def set_setting(key: str, value: Any, value_type: str) -> bool:
     else:
         str_value = str(value)
 
+    print(f"[DEBUG] set_setting called: key={key}, value_type={value_type}, str_value={str_value[:100]}...")
     conn = get_connection()
     try:
         cursor = conn.cursor()
@@ -94,6 +96,7 @@ def set_setting(key: str, value: Any, value_type: str) -> bool:
             VALUES (?, ?, ?)
         ''', (key, str_value, value_type))
         conn.commit()
+        print(f"[DEBUG] set_setting: committed for key={key}")
         return True
     finally:
         conn.close()

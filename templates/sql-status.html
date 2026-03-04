@@ -169,15 +169,61 @@
 
     .server-section {
         margin-bottom: 2rem;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        overflow: hidden;
     }
 
     .server-title {
-        font-size: 1.1rem;
+        font-size: 1.2rem;
         font-weight: bold;
+        color: white;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 1rem;
+        margin: 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .server-title .vs-badge {
+        background-color: rgba(255,255,255,0.2);
+        padding: 0.25rem 0.75rem;
+        border-radius: 4px;
+        font-size: 0.85rem;
+    }
+
+    .comparison-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        background-color: #f5f5f5;
+        border-bottom: 1px solid #ddd;
+    }
+
+    .comparison-header .server-info {
+        display: flex;
+        gap: 2rem;
+    }
+
+    .comparison-header .server-label {
+        font-size: 0.8rem;
+        color: #666;
+        text-transform: uppercase;
+    }
+
+    .comparison-header .server-value {
+        font-weight: 600;
+        color: #333;
+    }
+
+    .comparison-header .primary-label {
+        color: #4CAF50;
+    }
+
+    .comparison-header .secondary-label {
         color: #667eea;
-        margin-bottom: 0.5rem;
-        padding-bottom: 0.5rem;
-        border-bottom: 2px solid #667eea;
     }
 </style>
 {% endblock %}
@@ -382,25 +428,30 @@
         for (const [serverName, comparisonData] of Object.entries(comparisonResults)) {
             const section = document.createElement('div');
             section.className = 'server-section';
-            section.innerHTML = `<div class="server-title">${serverName}</div>`;
+
+            // Create header with Primary vs Secondary format
+            const statusBadge = comparisonData.differences_found
+                ? '<span style="background-color: #FF5722; color: white; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.85rem;">Differences Found</span>'
+                : '<span style="background-color: #4CAF50; color: white; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.85rem;">In Sync</span>';
+
+            section.innerHTML = `
+                <div class="server-title">
+                    <span><span class="vs-badge">PRIMARY</span> vs ${serverName}</span>
+                    ${statusBadge}
+                </div>
+            `;
 
             if (comparisonData.status === 'error') {
                 section.innerHTML += `<div style="background-color: #FFF3E0; padding: 1rem; border-radius: 4px; color: #E65100;"><strong>Error:</strong> ${comparisonData.error}</div>`;
             } else {
                 // Create comparison table
-                const statusColor = comparisonData.differences_found ? '#FFEBEE' : '#E8F5E9';
-                const statusText = comparisonData.differences_found ? 'Differences Found' : 'In Sync';
-
                 let html = `
-                    <div style="background-color: ${statusColor}; padding: 0.75rem; border-radius: 4px; margin-bottom: 1rem;">
-                        <strong>${statusText}</strong>
-                    </div>
                     <table class="comparison-table">
                         <thead>
                             <tr>
                                 <th>Table Name</th>
-                                <th style="text-align: right;">Primary (${primaryServer})</th>
-                                <th style="text-align: right;">${serverName}</th>
+                                <th style="text-align: right; color: #4CAF50;">Primary (${primaryServer})</th>
+                                <th style="text-align: right; color: #667eea;">${serverName}</th>
                                 <th style="text-align: right;">Difference</th>
                                 <th>Status</th>
                             </tr>

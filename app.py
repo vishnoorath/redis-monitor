@@ -756,9 +756,14 @@ def settings():
 
     if request.method == 'POST':
         # Get form data
+        print(f"[DEBUG] POST /settings received:")
+        print(f"  refresh_frequency: {request.form.get('refresh_frequency')}")
+        print(f"  notified_emails: {request.form.get('notified_emails')}")
+        print(f"  servers: {request.form.get('servers')}")
+
         refresh_frequency = request.form.get('refresh_frequency', '30')
         notified_emails = request.form.get('notified_emails', '')
-        servers_json = request.form.get('servers_json', '[]')
+        servers_json = request.form.get('servers') or '[]'
 
         # Update settings in SQLite
         settings_db.set_setting('REFRESH_FREQUENCY', int(refresh_frequency), 'INT')
@@ -768,8 +773,11 @@ def settings():
         import json
         try:
             servers_list = json.loads(servers_json) if servers_json else []
+            print(f"[DEBUG] Parsed servers_list: {servers_list}")
             settings_db.set_setting('SERVERS', servers_list, 'JSON')
-        except json.JSONDecodeError:
+            print(f"[DEBUG] Saved SERVERS to database")
+        except json.JSONDecodeError as e:
+            print(f"Error parsing servers JSON: {e}")
             pass  # Keep existing servers if invalid JSON
 
         # Reload settings

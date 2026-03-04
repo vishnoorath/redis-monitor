@@ -19,20 +19,6 @@ class ReplicationMonitor:
         """Initialize with settings from database."""
         pass
 
-    def get_default_credentials(self) -> Dict[str, Any]:
-        """
-        Get default credentials from SQLite settings database.
-
-        Returns:
-            Dict with default username, password, database, port
-        """
-        return {
-            'username': settings_db.get_setting_parsed('DB_USERNAME') or 'sa',
-            'password': settings_db.get_setting_parsed('DB_PASSWORD') or 't5!bT5AZ5Q@coqZ',
-            'database': settings_db.get_setting_parsed('DB_NAME') or 'NitaraDB',
-            'port': settings_db.get_setting_parsed('DB_PORT') or '1433',
-        }
-
     def get_servers(self) -> List[Dict[str, Any]]:
         """
         Get server configurations from SQLite settings database.
@@ -40,28 +26,14 @@ class ReplicationMonitor:
         Returns:
             List of server configurations with server, user, password, db, isPrimary
         """
-        # Get default credentials
-        defaults = self.get_default_credentials()
-
-        # Try to get servers from SQLite settings
+        # Get servers from SQLite settings
         servers = settings_db.get_setting_parsed('SERVERS')
 
         if servers and isinstance(servers, list) and len(servers) > 0:
-            # Fill in defaults for any missing fields
-            for server in servers:
-                if 'user' not in server or not server['user']:
-                    server['user'] = defaults['username']
-                if 'password' not in server or not server['password']:
-                    server['password'] = defaults['password']
-                if 'db' not in server or not server['db']:
-                    server['db'] = defaults['database']
             return servers
 
-        # Fallback to default servers if not configured in database
-        return [
-            {'server': '10.10.98.47', 'user': defaults['username'], 'password': defaults['password'], 'db': defaults['database'], 'isPrimary': True},
-            {'server': '10.10.98.76', 'user': defaults['username'], 'password': defaults['password'], 'db': defaults['database'], 'isPrimary': False},
-        ]
+        # No servers configured - return empty list
+        return []
 
     def _get_table_counts(self, server: str, server_config: Dict[str, Any] = None) -> Dict[str, Any]:
         """
@@ -69,19 +41,16 @@ class ReplicationMonitor:
 
         Args:
             server: Server address/name
-            server_config: Server configuration dict with user, password, db (optional, uses defaults if not provided)
+            server_config: Server configuration dict with user, password, db, port
 
         Returns:
             Dict with server info and table counts, or error details
         """
-        # Get default credentials
-        defaults = self.get_default_credentials()
-
-        # Use server-specific values or fallback to defaults
-        db_user = server_config.get('user', defaults['username']) if server_config else defaults['username']
-        db_password = server_config.get('password', defaults['password']) if server_config else defaults['password']
-        db_name = server_config.get('db', defaults['database']) if server_config else defaults['database']
-        db_port = defaults['port']
+        # Use server-specific values from config
+        db_user = server_config.get('user') if server_config else None
+        db_password = server_config.get('password') if server_config else None
+        db_name = server_config.get('db') if server_config else None
+        db_port = server_config.get('port', '1433') if server_config else '1433'
 
         result = {
             'server': server,
@@ -93,6 +62,12 @@ class ReplicationMonitor:
             'table_count': 0,
             'error': None
         }
+
+        # Validate required fields
+        if not all([db_user, db_password, db_name]):
+            result['status'] = 'error'
+            result['error'] = 'Missing server configuration: user, password, or db not provided'
+            return result
 
         try:
             connection_string = (

@@ -258,7 +258,7 @@
     </div>
     {% endif %}
 
-    <form method="POST" action="/settings">
+    <form method="POST" action="/settings" onsubmit="console.log('Form onsubmit triggered'); return prepareFormSubmit()">
         <div class="form-group">
             <label for="refresh_frequency">
                 Refresh Frequency
@@ -340,7 +340,7 @@
         </div>
 
         <!-- Hidden input to store servers JSON -->
-        <input type="hidden" id="serversJson" name="servers_json" value="">
+        <input type="hidden" id="serversJson" name="servers" value="">
 
         <div class="button-group">
             <button type="submit">Save Settings</button>
@@ -378,11 +378,13 @@
     });
 
     function renderServers() {
+        console.log('renderServers called - servers array:', servers);
         const serverList = document.getElementById('serverList');
         const serversJsonInput = document.getElementById('serversJson');
 
         // Update hidden input with current servers
         serversJsonInput.value = JSON.stringify(servers);
+        console.log('renderServers - hidden input set to:', serversJsonInput.value);
 
         if (servers.length === 0) {
             serverList.innerHTML = '<p class="help-text">No servers configured. Click "Add Server" to add one.</p>';
@@ -467,6 +469,16 @@
             servers.splice(index, 1);
             renderServers();
         }
+    }
+
+    function prepareFormSubmit() {
+        // Ensure the hidden input has the current servers value before submit
+        const serversValue = JSON.stringify(servers);
+        console.log('prepareFormSubmit - servers:', servers);
+        console.log('prepareFormSubmit - serversJson value:', serversValue);
+        document.getElementById('serversJson').value = serversValue;
+        console.log('prepareFormSubmit - hidden input value:', document.getElementById('serversJson').value);
+        return true;
     }
 </script>
 {% endblock %}

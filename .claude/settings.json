@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sqlite3 c:/Users/VISHNOORATH/code/gemini-cli/redis-monitor/settings.db \"SELECT * FROM ApplicationSettings;\")",
+      "Read(//c/UsersVISHNOORATH/code/gemini-cli/**)",
+      "Bash(sqlite3 settings.db \"SELECT * FROM ApplicationSettings WHERE key=''SERVERS'';\")",
+      "Bash(docker exec redis-monitor sqlite3 /app/settings.db \"SELECT * FROM ApplicationSettings WHERE key=''SERVERS'';\")"
+    ]
+  }
+}
