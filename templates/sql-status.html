@@ -444,59 +444,53 @@
             if (comparisonData.status === 'error') {
                 section.innerHTML += `<div style="background-color: #FFF3E0; padding: 1rem; border-radius: 4px; color: #E65100;"><strong>Error:</strong> ${comparisonData.error}</div>`;
             } else {
-                // Create comparison table
+                // Create comparison table - only show tables with differences
                 let html = `
                     <table class="comparison-table">
                         <thead>
                             <tr>
                                 <th>Table Name</th>
-                                <th style="text-align: right; color: #4CAF50;">Primary (${primaryServer})</th>
-                                <th style="text-align: right; color: #667eea;">${serverName}</th>
-                                <th style="text-align: right;">Difference</th>
-                                <th>Status</th>
+                                <th style="text-align: right;">Difference Only</th>
                             </tr>
                         </thead>
                         <tbody>
                 `;
 
-                // Sort tables by status (mismatches first)
+                // Filter to only show tables with differences
                 const tables = comparisonData.tables || {};
-                const sortedTables = Object.entries(tables).sort(([, a], [, b]) => {
-                    if (a.match === b.match) return 0;
-                    return a.match ? 1 : -1;
-                });
+                const diffTables = Object.entries(tables).filter(([, tableData]) => !tableData.match);
 
-                for (const [tableName, tableData] of sortedTables) {
-                    let statusBadge = 'Match';
-                    let rowClass = '';
-
-                    if (tableData.status === 'mismatch') {
-                        statusBadge = 'Mismatch';
-                        rowClass = 'table-mismatch';
-                    } else if (tableData.status === 'missing') {
-                        statusBadge = 'Missing';
-                        rowClass = 'table-missing';
-                    } else if (tableData.status === 'extra') {
-                        statusBadge = 'Extra';
-                        rowClass = 'table-missing';
-                    }
-
-                    let diffBadge = '';
-                    if (typeof tableData.difference === 'number') {
-                        const diffClass = tableData.difference > 0 ? 'diff-positive' : (tableData.difference < 0 ? 'diff-negative' : '');
-                        const sign = tableData.difference > 0 ? '+' : '';
-                        diffBadge = `<span class="diff-badge ${diffClass}">${sign}${tableData.difference}</span>`;
-                    }
-
+                if (diffTables.length === 0) {
                     html += `
-                        <tr class="${tableData.match ? '' : rowClass}">
-                            <td><strong>${tableName}</strong></td>
-                            <td style="text-align: right;">${tableData.primary_count !== null ? tableData.primary_count.toLocaleString() : 'N/A'}</td>
-                            <td style="text-align: right;">${tableData.secondary_count !== null ? tableData.secondary_count.toLocaleString() : 'N/A'}</td>
-                            <td style="text-align: right;">${diffBadge}</td>
-                            <td>${statusBadge}</td>
+                        <tr>
+                            <td colspan="2" style="text-align: center; color: #4CAF50; padding: 1rem;">
+                                All tables in sync - no differences found
+                            </td>
                         </tr>
                     `;
+                } else {
+                    // Sort by table name
+                    diffTables.sort(([a], [b]) => a.localeCompare(b));
+
+                    for (const [tableName, tableData] of diffTables) {
+                        let diffBadge = '';
+                        if (typeof tableData.difference === 'number') {
+                            const diffClass = tableData.difference > 0 ? 'diff-positive' : (tableData.difference < 0 ? 'diff-negative' : '');
+                            const sign = tableData.difference > 0 ? '+' : '';
+                            diffBadge = `<span class="diff-badge ${diffClass}">${sign}${tableData.difference.toLocaleString()}</span>`;
+                        } else if (tableData.status === 'missing') {
+                            diffBadge = `<span class="diff-badge diff-negative">Missing</span>`;
+                        } else if (tableData.status === 'extra') {
+                            diffBadge = `<span class="diff-badge diff-positive">Extra</span>`;
+                        }
+
+                        html += `
+                            <tr>
+                                <td><strong>${tableName}</strong></td>
+                                <td style="text-align: right;">${diffBadge}</td>
+                            </tr>
+                        `;
+                    }
                 }
 
                 html += `
