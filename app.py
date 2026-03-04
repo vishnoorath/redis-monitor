@@ -722,7 +722,8 @@ def internal_error(error):
 @app.route('/', methods=['GET'])
 def dashboard():
     """Render the web UI dashboard."""
-    return render_template('index.html')
+    ignore_tables = settings_db.get_setting_parsed('IGNORE_TABLES_FOR_MONITORING') or []
+    return render_template('index.html', ignore_tables=ignore_tables)
 
 
 @app.route('/redis-status', methods=['GET'])
@@ -734,7 +735,8 @@ def redis_status():
 @app.route('/sql-status', methods=['GET'])
 def sql_status():
     """Render the SQL Replication Status page."""
-    return render_template('sql-status.html')
+    ignore_tables = settings_db.get_setting_parsed('IGNORE_TABLES_FOR_MONITORING') or []
+    return render_template('sql-status.html', ignore_tables=ignore_tables)
 
 
 @app.route('/settings', methods=['GET', 'POST'])
@@ -747,11 +749,15 @@ def settings():
     refresh_frequency = settings_db.get_setting_parsed('REFRESH_FREQUENCY') or 30
     notified_emails = settings_db.get_setting_parsed('NOTIFIED_EMAILS') or ''
     servers = settings_db.get_setting_parsed('SERVERS') or []
+    ignore_tables_list = settings_db.get_setting_parsed('IGNORE_TABLES_FOR_MONITORING') or []
+    # Convert list to newline-separated string for display
+    ignore_tables = '\n'.join(ignore_tables_list)
 
     settings_data = {
         'refresh_frequency': refresh_frequency,
         'notified_emails': notified_emails,
-        'servers': servers
+        'servers': servers,
+        'ignore_tables': ignore_tables
     }
 
     if request.method == 'POST':
@@ -780,10 +786,18 @@ def settings():
             print(f"Error parsing servers JSON: {e}")
             pass  # Keep existing servers if invalid JSON
 
+        # Parse ignore tables (newline-separated string to list)
+        ignore_tables_input = request.form.get('ignore_tables') or ''
+        ignore_tables_list = [line.strip() for line in ignore_tables_input.split('\n') if line.strip()]
+        settings_db.set_setting('IGNORE_TABLES_FOR_MONITORING', ignore_tables_list, 'JSON')
+        print(f"[DEBUG] Saved IGNORE_TABLES_FOR_MONITORING to database: {ignore_tables_list}")
+
         # Reload settings
         settings_data['refresh_frequency'] = int(refresh_frequency)
         settings_data['notified_emails'] = notified_emails
         settings_data['servers'] = settings_db.get_setting_parsed('SERVERS') or []
+        saved_ignore_tables = settings_db.get_setting_parsed('IGNORE_TABLES_FOR_MONITORING') or []
+        settings_data['ignore_tables'] = '\n'.join(saved_ignore_tables)
 
         # Render with success message
         return render_template('settings.html', settings=settings_data, success=True)

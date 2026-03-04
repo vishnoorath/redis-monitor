@@ -345,6 +345,9 @@
 {% block extra_js %}
 <script>
     const POLLING_INTERVAL = 30000; // 30 seconds
+    const IGNORE_TABLES = {{ ignore_tables | tojson }};
+
+    console.log('Ignore tables for monitoring:', IGNORE_TABLES);
 
     /**
      * Fetch table count comparison data from /api/replication/table-counts
@@ -393,19 +396,54 @@
         const container = document.getElementById('table-count-comparison');
         if (!container) return;
 
-        // Update summary stats
+        // Update summary stats - calculate excluding ignored tables
         const summaryTablesCount = document.getElementById('summary-tables-count');
         const summaryServersSynced = document.getElementById('summary-servers-synced');
         const summaryServersDiff = document.getElementById('summary-servers-diff');
         const summaryTotalDiff = document.getElementById('summary-total-diff');
 
-        if (summaryTablesCount) summaryTablesCount.textContent = data.summary ? data.summary.tables_analyzed || '-' : '-';
-        if (summaryServersSynced) {
-            const synced = data.summary ? (data.summary.total_servers - (data.summary.servers_with_differences || 0)) : '-';
-            summaryServersSynced.textContent = synced;
+        // Count non-ignored tables
+        let nonIgnoredTotal = 0;
+        let nonIgnoredDiffs = 0;
+        let totalDiffCount = 0;
+
+        if (data.comparison_results) {
+            for (const [serverName, comparisonData] of Object.entries(data.comparison_results)) {
+                if (comparisonData.tables) {
+                    for (const [tableName, tableData] of Object.entries(comparisonData.tables)) {
+                        if (IGNORE_TABLES.includes(tableName)) continue;
+                        nonIgnoredTotal++;
+                        if (!tableData.match) {
+                            nonIgnoredDiffs++;
+                            totalDiffCount += Math.abs(tableData.difference || 0);
+                        }
+                    }
+                }
+            }
         }
-        if (summaryServersDiff) summaryServersDiff.textContent = data.summary ? data.summary.servers_with_differences || '-' : '-';
-        if (summaryTotalDiff) summaryTotalDiff.textContent = data.summary ? data.summary.total_table_differences || '-' : '-';
+
+        if (summaryTablesCount) summaryTablesCount.textContent = nonIgnoredTotal || '-';
+        if (summaryServersSynced) {
+            const numServers = data.summary ? data.summary.total_servers || 0 : 0;
+            const synced = nonIgnoredDiffs === 0 ? numServers : numServers - 1;
+            summaryServersSynced.textContent = numServers > 0 ? (nonIgnoredDiffs === 0 ? numServers : numServers - 1) : '-';
+        }
+        if (summaryServersDiff) {
+            // Count servers with non-ignored differences
+            let serversWithDiffs = 0;
+            if (data.comparison_results) {
+                for (const [serverName, comparisonData] of Object.entries(data.comparison_results)) {
+                    if (comparisonData.tables) {
+                        const hasDiff = Object.entries(comparisonData.tables).some(([tableName, tableData]) => {
+                            return !IGNORE_TABLES.includes(tableName) && !tableData.match;
+                        });
+                        if (hasDiff) serversWithDiffs++;
+                    }
+                }
+            }
+            summaryServersDiff.textContent = serversWithDiffs || '0';
+        }
+        if (summaryTotalDiff) summaryTotalDiff.textContent = totalDiffCount || '0';
 
         // Clear container
         container.innerHTML = '';
@@ -456,9 +494,15 @@
                         <tbody>
                 `;
 
-                // Filter to only show tables with differences
+                // Filter to only show tables with differences (excluding ignored tables)
                 const tables = comparisonData.tables || {};
-                const diffTables = Object.entries(tables).filter(([, tableData]) => !tableData.match);
+                const diffTables = Object.entries(tables).filter(([tableName, tableData]) => {
+                    // Filter out ignored tables
+                    if (IGNORE_TABLES.includes(tableName)) {
+                        return false;
+                    }
+                    return !tableData.match;
+                });
 
                 if (diffTables.length === 0) {
                     html += `

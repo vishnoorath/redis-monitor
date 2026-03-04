@@ -295,6 +295,18 @@
         </div>
 
         <div class="form-group">
+            <label for="ignore_tables">
+                Ignore Tables for Monitoring
+                <span>(Tables to exclude from SQL replication difference monitoring)</span>
+            </label>
+            <textarea
+                id="ignore_tables"
+                name="ignore_tables"
+                placeholder="tbl_Msg91SmSFailureCallbackLog&#10;tbl_MessageLangVariant">{{ settings.ignore_tables | default('') }}</textarea>
+            <div class="help-text">Enter one table name per line</div>
+        </div>
+
+        <div class="form-group">
             <label>
                 Database Servers to Monitor
                 <span>(Configure database servers for monitoring)</span>

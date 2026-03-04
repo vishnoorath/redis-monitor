@@ -84,6 +84,12 @@ def set_setting(key: str, value: Any, value_type: str) -> bool:
     # Convert value to string based on type
     if value_type == 'JSON':
         str_value = json.dumps(value)
+    elif value_type == 'JSARRAY':
+        # Handle JavaScript array format - store as-is
+        if isinstance(value, list):
+            str_value = json.dumps(value)
+        else:
+            str_value = str(value)
     else:
         str_value = str(value)
 
@@ -166,6 +172,16 @@ def get_setting_parsed(key: str) -> Any:
 
     if value_type == 'JSON':
         return json.loads(value)
+    elif value_type == 'JSARRAY':
+        # Parse JavaScript array format: ['item1', 'item2']
+        try:
+            # Convert JavaScript array notation to valid JSON
+            json_str = value.strip()
+            if json_str.startswith('[') and json_str.endswith(']'):
+                return json.loads(json_str)
+            return []
+        except json.JSONDecodeError:
+            return []
     elif value_type == 'INT':
         return int(value)
     elif value_type == 'FLOAT':

@@ -431,25 +431,6 @@
     </div>
 </div>
 
-<div class="stats-grid" id="sql-stats">
-    <div class="stat-card sql-header">
-        <h4>Total Tables</h4>
-        <div class="value" id="sql-total-tables">-</div>
-    </div>
-    <div class="stat-card sql-header">
-        <h4>Servers Synced</h4>
-        <div class="value success" id="sql-servers-synced">-</div>
-    </div>
-    <div class="stat-card sql-header">
-        <h4>Servers w/ Diffs</h4>
-        <div class="value error" id="sql-servers-diff">-</div>
-    </div>
-    <div class="stat-card sql-header">
-        <h4>Total Differences</h4>
-        <div class="value warning" id="sql-total-diff">-</div>
-    </div>
-</div>
-
 <!-- SQL Table Differences Section -->
 <div class="table-diff-section" id="table-diff-section">
     <div class="table-diff-header">
@@ -466,6 +447,7 @@
     // Global monitoring state
     let monitoringInterval = null;
     let POLLING_INTERVAL = 30000; // 30 seconds default, will be updated from settings
+    const IGNORE_TABLES = {{ ignore_tables | tojson }};
     const DEFAULT_PAGE_SIZE = 10;
 
     // Pagination state
@@ -653,21 +635,45 @@
      * Update SQL stats in the UI
      */
     function updateSqlStats(data) {
-        const summary = data.summary || {};
+        // Calculate stats excluding ignored tables
+        let nonIgnoredTotal = 0;
+        let nonIgnoredDiffs = 0;
+        let totalDiffCount = 0;
+        let serversWithDiffs = 0;
 
+        if (data.comparison_results) {
+            for (const [serverName, comparisonData] of Object.entries(data.comparison_results)) {
+                if (comparisonData.tables) {
+                    let serverHasDiff = false;
+                    for (const [tableName, tableData] of Object.entries(comparisonData.tables)) {
+                        if (IGNORE_TABLES.includes(tableName)) continue;
+                        nonIgnoredTotal++;
+                        if (!tableData.match) {
+                            nonIgnoredDiffs++;
+                            serverHasDiff = true;
+                            totalDiffCount += Math.abs(tableData.difference || 0);
+                        }
+                    }
+                    if (serverHasDiff) serversWithDiffs++;
+                }
+            }
+        }
+
+        /*
         // Update stats
         const totalTables = document.getElementById('sql-total-tables');
         const serversSynced = document.getElementById('sql-servers-synced');
         const serversDiff = document.getElementById('sql-servers-diff');
         const totalDiff = document.getElementById('sql-total-diff');
 
-        if (totalTables) totalTables.textContent = summary.tables_analyzed || '-';
+        if (totalTables) totalTables.textContent = nonIgnoredTotal || '-';
         if (serversSynced) {
-            const synced = (summary.total_servers || 0) - (summary.servers_with_differences || 0);
-            serversSynced.textContent = synced;
+            const totalServers = data.summary ? data.summary.total_servers || 0 : 0;
+            serversSynced.textContent = serversWithDiffs === 0 ? totalServers : totalServers - serversWithDiffs;
         }
-        if (serversDiff) serversDiff.textContent = summary.servers_with_differences || '0';
-        if (totalDiff) totalDiff.textContent = summary.total_table_differences || '0';
+        if (serversDiff) serversDiff.textContent = serversWithDiffs || '0';
+        if (totalDiff) totalDiff.textContent = totalDiffCount || '0';
+        */
 
         // Update table diff section
         displayTableDiffs(data);
@@ -723,6 +729,8 @@
             const mismatchedTables = [];
 
             for (const [tableName, tableData] of Object.entries(tables)) {
+                // Skip ignored tables
+                if (IGNORE_TABLES.includes(tableName)) continue;
                 if (!tableData.match) {
                     mismatchedTables.push({
                         server: serverName,
