@@ -35,13 +35,71 @@ class ReplicationMonitor:
         # No servers configured - return empty list
         return []
 
-    def _get_table_counts(self, server: str, server_config: Dict[str, Any] = None) -> Dict[str, Any]:
+    def _get_tables_with_change_tracking(self, server: str, server_config: Dict[str, Any] = None) -> List[str]:
+        """
+        Get list of tables with Change Tracking enabled from a server.
+
+        Args:
+            server: Server address/name
+            server_config: Server configuration dict with user, password, db, port
+
+        Returns:
+            List of table names with change tracking enabled, or empty list on error
+        """
+        db_user = server_config.get('user') if server_config else None
+        db_password = server_config.get('password') if server_config else None
+        db_name = server_config.get('db') if server_config else None
+        db_port = server_config.get('port', '1433') if server_config else '1433'
+
+        try:
+            connection_string = (
+                f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+                f"SERVER={server},{db_port};"
+                f"DATABASE={db_name};"
+                f"UID={db_user};"
+                f"PWD={db_password};"
+                f"TrustServerCertificate=yes;"
+                f"Encrypt=yes;"
+            )
+            connection = pyodbc.connect(connection_string)
+            cursor = connection.cursor()
+
+            cursor.execute("""
+                SELECT 
+                    t.name AS TableName
+                FROM sys.tables t
+                INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+                INNER JOIN sys.change_tracking_tables ct ON t.object_id = ct.object_id
+                WHERE s.name = 'dbo'
+                AND (t.name NOT LIKE '%Backup' AND t.name NOT LIKE '%Old' AND t.name NOT LIKE '%Temp')
+                AND s.name = 'dbo'
+                ORDER BY t.name
+            """)
+            rows = cursor.fetchall()
+
+            table_names = [row[0] for row in rows if len(row) >= 1]
+
+            cursor.close()
+            connection.close()
+
+            print(f"  Found {len(table_names)} tables with change tracking enabled")
+            return table_names
+
+        except pyodbc.Error as e:
+            print(f"  Error fetching change tracking tables: {str(e)}")
+            return []
+        except Exception as e:
+            print(f"  Unexpected error fetching change tracking tables: {str(e)}")
+            return []
+
+    def _get_table_counts(self, server: str, server_config: Dict[str, Any] = None, table_filter: List[str] = None) -> Dict[str, Any]:
         """
         Execute stored procedure on a specific server and get table counts.
 
         Args:
             server: Server address/name
             server_config: Server configuration dict with user, password, db, port
+            table_filter: Optional list of table names to filter results (e.g., tables with change tracking)
 
         Returns:
             Dict with server info and table counts, or error details
@@ -84,7 +142,7 @@ class ReplicationMonitor:
 
             # Try the stored procedure first, fallback to direct query
             try:
-                cursor.execute("""
+                base_query = """
                     SELECT
                         t.NAME AS TableName,
                         p.rows AS RowCounts
@@ -94,8 +152,18 @@ class ReplicationMonitor:
                     WHERE t.is_ms_shipped = 0
                     AND s.name NOT IN ('sys', 'information_schema')
                     AND (t.name NOT LIKE '%Backup' AND t.name NOT LIKE '%Old' AND t.name NOT LIKE '%Temp')
-                    ORDER BY s.Name, t.Name
-                """)
+                """
+
+                # If table_filter is provided, only include those tables
+                if table_filter:
+                    # Create filter clause for change-tracked tables only
+                    # Escape any single quotes in table names and create IN clause
+                    table_list = "', '".join([name.replace("'", "''") for name in table_filter])
+                    base_query += f"\n                    AND t.name IN ('{table_list}')"
+
+                base_query += "\n                    ORDER BY s.Name, t.Name"
+
+                cursor.execute(base_query)
                 rows = cursor.fetchall()
             except pyodbc.Error as e:
                 # fail with error
@@ -129,6 +197,7 @@ class ReplicationMonitor:
     def compare_servers(self) -> Dict[str, Any]:
         """
         Get table counts from all servers and compare against primary server (10.10.98.47).
+        Only compares tables that have Change Tracking enabled on the primary server.
 
         Returns:
             Dict with comparison results and differences highlighted
@@ -145,10 +214,19 @@ class ReplicationMonitor:
         if not primary_server_config and servers:
             primary_server_config = servers[0]
 
+        if not primary_server_config:
+            return {
+                'status': 'error',
+                'error': 'No servers configured',
+                'timestamp': datetime.now().isoformat()
+            }
+
+        primary_server = primary_server_config['server']
+
         results = {
             'status': 'success',
             'timestamp': datetime.now().isoformat(),
-            'primary_server': primary_server_config['server'] if primary_server_config else servers[0]['server'],
+            'primary_server': primary_server,
             'all_servers': {},
             'comparison_results': {},
             'summary': {
@@ -157,15 +235,24 @@ class ReplicationMonitor:
                 'total_table_differences': 0,
                 'tables_analyzed': 0
             },
-            'errors': []
+            'errors': [],
+            'tables_with_change_tracking': []
         }
 
-        # Get table counts from all servers
+        # Step 1: Fetch tables with Change Tracking enabled from primary server
+        print("Fetching tables with Change Tracking enabled from primary server...")
+        change_tracked_tables = self._get_tables_with_change_tracking(primary_server, primary_server_config)
+        results['tables_with_change_tracking'] = change_tracked_tables
+
+        if not change_tracked_tables:
+            print("  Warning: No tables with Change Tracking found on primary server")
+
+        # Step 2: Get table counts from all servers, filtered to change-tracked tables
         print("Fetching table counts from all servers...")
         for server_config in servers:
             server = server_config['server']
             print(f"  Connecting to {server}...")
-            server_data = self._get_table_counts(server, server_config)
+            server_data = self._get_table_counts(server, server_config, change_tracked_tables)
             results['all_servers'][server] = server_data
 
             if server_data['status'] == 'error':
@@ -175,14 +262,13 @@ class ReplicationMonitor:
                 })
 
         # Get primary server data
-        primary_server = primary_server_config['server'] if primary_server_config else servers[0]['server']
         primary_data = results['all_servers'][primary_server]
         if primary_data['status'] != 'success':
             results['status'] = 'error'
             results['comparison_results']['error'] = 'Could not connect to primary server'
             return results
 
-        # Compare each server against primary
+        # Step 3: Compare each server against primary (only using change-tracked tables)
         print("Comparing servers...")
         for server_config in servers:  # Compare all servers against primary
             server = server_config['server']
@@ -199,7 +285,7 @@ class ReplicationMonitor:
                 results['summary']['servers_with_differences'] += 1
                 continue
 
-            # Compare table counts
+            # Compare table counts (only for change-tracked tables)
             comparison = {
                 'status': 'analyzed',
                 'differences_found': False,

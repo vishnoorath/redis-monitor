@@ -19,35 +19,201 @@
         border-bottom: 2px solid #667eea;
     }
 
-    .info-box {
-        background-color: #E8F5E9;
-        border-left: 4px solid #4CAF50;
-        padding: 1rem;
-        border-radius: 4px;
-        margin-bottom: 1rem;
+    /* Tab Styles */
+    .tabs-container {
+        margin-bottom: 1.5rem;
     }
 
-    .info-box p {
-        margin: 0;
+    .tabs {
+        display: flex;
+        gap: 0.5rem;
+        border-bottom: 2px solid #e0e0e0;
+        padding-bottom: 0;
+        flex-wrap: wrap;
+    }
+
+    .tab {
+        padding: 0.75rem 1.5rem;
+        border: none;
+        background: none;
+        cursor: pointer;
+        font-size: 1rem;
+        font-weight: 500;
+        color: #666;
+        border-bottom: 3px solid transparent;
+        margin-bottom: -2px;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .tab:hover {
+        color: #667eea;
+        background-color: #f5f5f5;
+    }
+
+    .tab.active {
+        color: #667eea;
+        border-bottom-color: #667eea;
+        font-weight: 600;
+    }
+
+    .tab .badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 24px;
+        height: 24px;
+        padding: 0 0.5rem;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        font-weight: bold;
+    }
+
+    .tab .badge.synced {
+        background-color: #E8F5E9;
         color: #2E7D32;
     }
 
-    .feature-list {
-        list-style: none;
+    .tab .badge.out-of-sync {
+        background-color: #FFEBEE;
+        color: #B71C1C;
     }
 
-    .feature-list li {
-        padding: 0.75rem 0;
-        padding-left: 1.5rem;
-        position: relative;
+    .tab .badge.error {
+        background-color: #FFF3E0;
+        color: #E65100;
     }
 
-    .feature-list li:before {
-        content: "✓";
-        position: absolute;
-        left: 0;
-        color: #4CAF50;
+    .tab-content {
+        display: none;
+        padding: 1.5rem 0;
+    }
+
+    .tab-content.active {
+        display: block;
+    }
+
+    /* Summary Stats */
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .summary-stat {
+        background-color: #f5f5f5;
+        padding: 1rem;
+        border-radius: 4px;
+        text-align: center;
+    }
+
+    .summary-stat .label {
+        font-size: 0.85rem;
+        color: #666;
+        margin-bottom: 0.25rem;
+    }
+
+    .summary-stat .value {
+        font-size: 1.5rem;
         font-weight: bold;
+        color: #333;
+    }
+
+    .summary-stat .value.success { color: #4CAF50; }
+    .summary-stat .value.warning { color: #FF9800; }
+    .summary-stat .value.error { color: #F44336; }
+
+    /* Comparison Table Styles */
+    .comparison-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+        margin-bottom: 1rem;
+    }
+
+    .comparison-table thead {
+        background-color: #667eea;
+        color: white;
+    }
+
+    .comparison-table th,
+    .comparison-table td {
+        padding: 0.75rem;
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+    }
+
+    .comparison-table tbody tr:hover {
+        background-color: #f9f9f9;
+    }
+
+    .diff-badge {
+        display: inline-block;
+        padding: 0.25rem 0.5rem;
+        border-radius: 3px;
+        font-size: 0.85rem;
+        font-weight: bold;
+    }
+
+    .diff-positive {
+        background-color: #C8E6C9;
+        color: #1B5E20;
+    }
+
+    .diff-negative {
+        background-color: #FFCDD2;
+        color: #B71C1C;
+    }
+
+    /* Server Header */
+    .server-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 1rem;
+        border-radius: 8px 8px 0 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .server-header h3 {
+        margin: 0;
+        font-size: 1.2rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .server-header .status-badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 4px;
+        font-size: 0.85rem;
+        font-weight: bold;
+    }
+
+    .server-header .status-badge.synced {
+        background-color: rgba(76, 175, 80, 0.2);
+        color: #A5D6A7;
+    }
+
+    .server-header .status-badge.out-of-sync {
+        background-color: rgba(244, 67, 54, 0.2);
+        color: #FFCDD2;
+    }
+
+    .server-header .status-badge.error {
+        background-color: rgba(255, 152, 0, 0.2);
+        color: #FFE0B2;
+    }
+
+    .server-content {
+        border: 1px solid #ddd;
+        border-top: none;
+        border-radius: 0 0 8px 8px;
+        overflow: hidden;
     }
 
     /* Status Cards */
@@ -107,247 +273,77 @@
         color: #333;
     }
 
-    /* Table Comparison Styles */
-    .comparison-table {
-        width: 100%;
-        border-collapse: collapse;
-        background: white;
-        margin-bottom: 1rem;
+    .sort-icon {
+        font-size: 0.7rem;
+        margin-left: 0.25rem;
+        opacity: 0.4;
     }
 
-    .comparison-table thead {
-        background-color: #667eea;
-        color: white;
+    .sortable:hover .sort-icon {
+        opacity: 1;
     }
 
-    .comparison-table th,
-    .comparison-table td {
-        padding: 0.75rem;
-        text-align: left;
-        border-bottom: 1px solid #ddd;
-    }
-
-    .comparison-table tbody tr:hover {
-        background-color: #f9f9f9;
-    }
-
-    .table-match {
-        background-color: #E8F5E9;
-        color: #2E7D32;
-        font-weight: 600;
-    }
-
-    .table-mismatch {
-        background-color: #FFEBEE;
-        color: #B71C1C;
-        font-weight: 600;
-    }
-
-    .table-missing {
-        background-color: #FFF3E0;
-        color: #E65100;
-        font-weight: 600;
-    }
-
-    .diff-badge {
-        display: inline-block;
-        padding: 0.25rem 0.5rem;
-        border-radius: 3px;
-        font-size: 0.85rem;
-        font-weight: bold;
-    }
-
-    .diff-positive {
-        background-color: #C8E6C9;
-        color: #1B5E20;
-    }
-
-    .diff-negative {
-        background-color: #FFCDD2;
-        color: #B71C1C;
-    }
-
-    .server-section {
-        margin-bottom: 2rem;
-        border: 1px solid #ddd;
-        border-radius: 8px;
-        overflow: hidden;
-    }
-
-    .server-title {
-        font-size: 1.2rem;
-        font-weight: bold;
-        color: white;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1rem;
-        margin: 0;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .server-title .vs-badge {
-        background-color: rgba(255,255,255,0.2);
-        padding: 0.25rem 0.75rem;
-        border-radius: 4px;
-        font-size: 0.85rem;
-    }
-
-    .comparison-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.75rem 1rem;
-        background-color: #f5f5f5;
-        border-bottom: 1px solid #ddd;
-    }
-
-    .comparison-header .server-info {
-        display: flex;
-        gap: 2rem;
-    }
-
-    .comparison-header .server-label {
-        font-size: 0.8rem;
-        color: #666;
-        text-transform: uppercase;
-    }
-
-    .comparison-header .server-value {
-        font-weight: 600;
-        color: #333;
-    }
-
-    .comparison-header .primary-label {
-        color: #4CAF50;
-    }
-
-    .comparison-header .secondary-label {
+    th.sorted .sort-icon {
+        opacity: 1;
         color: #667eea;
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<!-- How It Works Card -->
-<div class="card">
-    <h2>How It Works</h2>
-
-    <h3 style="color: #666; font-size: 1.1rem; margin-top: 0;">Process Flow</h3>
-    <ol style="margin-left: 1.5rem; margin-bottom: 1.5rem;">
-        <li>Enter farm IDs to monitor</li>
-        <li>Generate JWT authentication token</li>
-        <li>Fetch metadata from OLD DB API</li>
-        <li>Fetch metadata from NEW REDIS API</li>
-        <li>Compare responses using DeepDiff</li>
-        <li>Generate reports and display results</li>
-    </ol>
-
-    <h3 style="color: #666; font-size: 1.1rem; margin-bottom: 1rem;">Features</h3>
-    <ul class="feature-list">
-        <li>Compare multiple farms in one request</li>
-        <li>Color-coded difference highlighting</li>
-        <li>Detailed summary statistics</li>
-        <li>Expandable comparison details</li>
-        <li>Real-time status display</li>
-        <li>No files written to disk</li>
-    </ul>
-</div>
-
-<!-- Table Count Comparison -->
+<!-- Table Count Comparison with Tabs -->
 <div class="card">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-        <h2 style="margin: 0; border: none; padding: 0;">Table Row Count Comparison</h2>
+        <h2 style="margin: 0; border: none; padding: 0;">SQL Replication Status</h2>
         <div style="font-size: 0.9rem; color: #666;">
             Last updated: <span id="table-count-time">--:--:--</span>
+            <button onclick="fetchTableCountData()" style="margin-left: 0.5rem; padding: 0.25rem 0.75rem; border: 1px solid #667eea; background: white; color: #667eea; border-radius: 4px; cursor: pointer;">Refresh</button>
         </div>
     </div>
 
-    <!-- Summary Stats -->
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
-        <div style="background-color: #f5f5f5; padding: 1rem; border-radius: 4px;">
-            <div style="font-size: 0.85rem; color: #666;">Total Tables</div>
-            <div style="font-size: 1.5rem; font-weight: bold; color: #333;" id="summary-tables-count">-</div>
+    <!-- Overall Summary Stats -->
+    <div class="summary-grid">
+        <div class="summary-stat">
+            <div class="label">Tables Monitored</div>
+            <div class="value" id="summary-tables-count">-</div>
         </div>
-        <div style="background-color: #f5f5f5; padding: 1rem; border-radius: 4px;">
-            <div style="font-size: 0.85rem; color: #666;">Servers Synced</div>
-            <div style="font-size: 1.5rem; font-weight: bold; color: #4CAF50;" id="summary-servers-synced">-</div>
+        <div class="summary-stat">
+            <div class="label">Total Servers</div>
+            <div class="value" id="summary-total-servers">-</div>
         </div>
-        <div style="background-color: #f5f5f5; padding: 1rem; border-radius: 4px;">
-            <div style="font-size: 0.85rem; color: #666;">Servers w/ Diffs</div>
-            <div style="font-size: 1.5rem; font-weight: bold; color: #F44336;" id="summary-servers-diff">-</div>
+        <div class="summary-stat">
+            <div class="label">Servers Synced</div>
+            <div class="value success" id="summary-servers-synced">-</div>
         </div>
-        <div style="background-color: #f5f5f5; padding: 1rem; border-radius: 4px;">
-            <div style="font-size: 0.85rem; color: #666;">Total Differences</div>
-            <div style="font-size: 1.5rem; font-weight: bold; color: #FF9800;" id="summary-total-diff">-</div>
+        <div class="summary-stat">
+            <div class="label">Servers Out of Sync</div>
+            <div class="value error" id="summary-servers-diff">-</div>
         </div>
     </div>
 
-    <!-- Comparison Tables Container -->
-    <div id="table-count-comparison" style="overflow-x: auto;">
-        <p style="text-align: center; color: #999; padding: 2rem;">Loading table counts...</p>
-    </div>
-</div>
-
-<!-- Database Connection Status -->
-<div class="status-card">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-        <h3 style="margin: 0;">Database Connection</h3>
-        <span class="status-indicator healthy">
-            <span class="status-dot green"></span> Connected
-        </span>
-    </div>
-
-    <div class="status-grid">
-        <div class="status-item">
-            <label>Server</label>
-            <value>{{ config.SQL_SERVER|default('10.10.98.47') }}</value>
-        </div>
-        <div class="status-item">
-            <label>Database</label>
-            <value>{{ config.SQL_DATABASE|default('NitaraDB') }}</value>
-        </div>
-        <div class="status-item">
-            <label>Last Sync</label>
-            <value id="sql-last-sync">-</value>
-        </div>
-        <div class="status-item">
-            <label>Replication Lag</label>
-            <value id="sql-replication-lag">-</value>
+    <!-- Server Tabs -->
+    <div class="tabs-container">
+        <div class="tabs" id="server-tabs">
+            <!-- Tabs will be dynamically generated -->
+            <p style="color: #999; padding: 1rem;">Loading server data...</p>
         </div>
     </div>
-</div>
 
-<!-- Replication Health -->
-<div class="status-card">
-    <h3>Replication Health</h3>
-    <div class="status-grid">
-        <div class="status-item">
-            <label>Total Farms</label>
-            <value id="sql-total-farms">-</value>
-        </div>
-        <div class="status-item">
-            <label>Synced Today</label>
-            <value id="sql-synced-today">-</value>
-        </div>
-        <div class="status-item">
-            <label>Pending Sync</label>
-            <value id="sql-pending-sync">-</value>
-        </div>
-        <div class="status-item">
-            <label>Failed Sync</label>
-            <value id="sql-failed-sync" style="color: #4CAF50;">0</value>
-        </div>
+    <!-- Tab Contents -->
+    <div id="tab-contents">
+        <!-- Tab contents will be dynamically generated -->
     </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-    const POLLING_INTERVAL = 30000; // 30 seconds
     const IGNORE_TABLES = {{ ignore_tables | tojson }};
 
     console.log('Ignore tables for monitoring:', IGNORE_TABLES);
+
+    // Global variable to store fetched data
+    let cachedReplicationData = null;
 
     /**
      * Fetch table count comparison data from /api/replication/table-counts
@@ -359,194 +355,394 @@
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             const data = await response.json();
-            displayTableCountComparison(data);
+            cachedReplicationData = data;
+            renderTabsAndContent(data);
             updateTableCountTimestamp();
-            updateReplicationStats(data);
         } catch (error) {
             console.error('Error fetching table count data:', error);
-            const container = document.getElementById('table-count-comparison');
-            if (container) {
-                container.innerHTML = `<div style="background-color: #FFEBEE; padding: 1rem; border-radius: 4px; color: #B71C1C;"><strong>Error:</strong> ${error.message}</div>`;
-            }
+            document.getElementById('server-tabs').innerHTML =
+                `<div style="background-color: #FFEBEE; padding: 1rem; border-radius: 4px; color: #B71C1C;"><strong>Error:</strong> ${error.message}</div>`;
         }
     }
 
     /**
-     * Update replication statistics
+     * Render tabs and tab contents based on fetched data
      */
-    function updateReplicationStats(data) {
-        const totalFarms = document.getElementById('sql-total-farms');
-        const syncedToday = document.getElementById('sql-synced-today');
-        const lastSync = document.getElementById('sql-last-sync');
-        const replLag = document.getElementById('sql-replication-lag');
-
-        if (totalFarms) totalFarms.textContent = data.summary ? data.summary.tables_analyzed || '-' : '-';
-        if (syncedToday) syncedToday.textContent = data.summary ? (data.summary.total_servers - data.summary.servers_with_differences) || '-' : '-';
-        if (lastSync) {
-            const now = new Date();
-            lastSync.textContent = now.toLocaleTimeString();
-        }
-        if (replLag) replLag.textContent = '< 1 sec';
-    }
-
-    /**
-     * Display table count comparison in the UI
-     */
-    function displayTableCountComparison(data) {
-        const container = document.getElementById('table-count-comparison');
-        if (!container) return;
-
-        // Update summary stats - calculate excluding ignored tables
-        const summaryTablesCount = document.getElementById('summary-tables-count');
-        const summaryServersSynced = document.getElementById('summary-servers-synced');
-        const summaryServersDiff = document.getElementById('summary-servers-diff');
-        const summaryTotalDiff = document.getElementById('summary-total-diff');
-
-        // Count non-ignored tables
-        let nonIgnoredTotal = 0;
-        let nonIgnoredDiffs = 0;
-        let totalDiffCount = 0;
-
-        if (data.comparison_results) {
-            for (const [serverName, comparisonData] of Object.entries(data.comparison_results)) {
-                if (comparisonData.tables) {
-                    for (const [tableName, tableData] of Object.entries(comparisonData.tables)) {
-                        if (IGNORE_TABLES.includes(tableName)) continue;
-                        nonIgnoredTotal++;
-                        if (!tableData.match) {
-                            nonIgnoredDiffs++;
-                            totalDiffCount += Math.abs(tableData.difference || 0);
-                        }
-                    }
-                }
-            }
-        }
-
-        if (summaryTablesCount) summaryTablesCount.textContent = nonIgnoredTotal || '-';
-        if (summaryServersSynced) {
-            const numServers = data.summary ? data.summary.total_servers || 0 : 0;
-            const synced = nonIgnoredDiffs === 0 ? numServers : numServers - 1;
-            summaryServersSynced.textContent = numServers > 0 ? (nonIgnoredDiffs === 0 ? numServers : numServers - 1) : '-';
-        }
-        if (summaryServersDiff) {
-            // Count servers with non-ignored differences
-            let serversWithDiffs = 0;
-            if (data.comparison_results) {
-                for (const [serverName, comparisonData] of Object.entries(data.comparison_results)) {
-                    if (comparisonData.tables) {
-                        const hasDiff = Object.entries(comparisonData.tables).some(([tableName, tableData]) => {
-                            return !IGNORE_TABLES.includes(tableName) && !tableData.match;
-                        });
-                        if (hasDiff) serversWithDiffs++;
-                    }
-                }
-            }
-            summaryServersDiff.textContent = serversWithDiffs || '0';
-        }
-        if (summaryTotalDiff) summaryTotalDiff.textContent = totalDiffCount || '0';
-
-        // Clear container
-        container.innerHTML = '';
+    function renderTabsAndContent(data) {
+        const tabsContainer = document.getElementById('server-tabs');
+        const contentsContainer = document.getElementById('tab-contents');
 
         if (data.status !== 'success') {
-            container.innerHTML = `<div style="background-color: #FFEBEE; padding: 1rem; border-radius: 4px; color: #B71C1C;"><strong>Error:</strong> ${data.error || 'Unknown error'}</div>`;
+            tabsContainer.innerHTML = `<div style="background-color: #FFEBEE; padding: 1rem; border-radius: 4px; color: #B71C1C;"><strong>Error:</strong> ${data.error || 'Unknown error'}</div>`;
+            contentsContainer.innerHTML = '';
             return;
         }
 
-        const primaryServer = data.primary_server;
-        const primaryData = data.all_servers ? data.all_servers[primaryServer] : null;
+        // Update summary stats
+        updateSummaryStats(data);
 
-        if (!primaryData || primaryData.status !== 'success') {
-            container.innerHTML = `<div style="background-color: #FFEBEE; padding: 1rem; border-radius: 4px; color: #B71C1C;"><strong>Error:</strong> Could not connect to primary server</div>`;
-            return;
-        }
-
-        // Display comparison for each secondary server
         const comparisonResults = data.comparison_results || {};
-        for (const [serverName, comparisonData] of Object.entries(comparisonResults)) {
-            const section = document.createElement('div');
-            section.className = 'server-section';
+        const primaryServer = data.primary_server;
+        const servers = Object.keys(comparisonResults);
 
-            // Create header with Primary vs Secondary format
-            const statusBadge = comparisonData.differences_found
-                ? '<span style="background-color: #FF5722; color: white; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.85rem;">Differences Found</span>'
-                : '<span style="background-color: #4CAF50; color: white; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.85rem;">In Sync</span>';
+        if (servers.length === 0) {
+            tabsContainer.innerHTML = '<p style="color: #999; padding: 1rem;">No secondary servers to compare</p>';
+            contentsContainer.innerHTML = '';
+            return;
+        }
 
-            section.innerHTML = `
-                <div class="server-title">
-                    <span><span class="vs-badge">PRIMARY</span> vs ${serverName}</span>
-                    ${statusBadge}
-                </div>
+        // Build tabs HTML
+        let tabsHtml = '';
+        let contentsHtml = '';
+
+        // Primary server tab (always first)
+        tabsHtml += `
+            <button class="tab active" onclick="switchTab('primary')" id="tab-primary">
+                ${primaryServer}
+                <span class="badge synced">0</span>
+            </button>
+        `;
+        contentsHtml += `<div class="tab-content active" id="content-primary">${renderPrimaryServerContent(data)}</div>`;
+
+        // Secondary server tabs
+        servers.forEach((serverName, index) => {
+            const comparisonData = comparisonResults[serverName];
+            const diffCount = countDiffs(comparisonData);
+            const hasError = comparisonData.status === 'error';
+            const badgeClass = hasError ? 'error' : (diffCount > 0 ? 'out-of-sync' : 'synced');
+
+            tabsHtml += `
+                <button class="tab" onclick="switchTab('${serverName}')" id="tab-${serverName}">
+                    ${serverName}
+                    <span class="badge ${badgeClass}">${diffCount}</span>
+                </button>
             `;
+            contentsHtml += `<div class="tab-content" id="content-${serverName}">${renderServerContent(serverName, comparisonData)}</div>`;
+        });
 
+        tabsContainer.innerHTML = tabsHtml;
+        contentsContainer.innerHTML = contentsHtml;
+    }
+
+    /**
+     * Count tables with differences for a server
+     */
+    function countDiffs(comparisonData) {
+        if (!comparisonData || comparisonData.status === 'error' || !comparisonData.tables) {
+            return 0;
+        }
+        return Object.values(comparisonData.tables).filter(t => !t.match).length;
+    }
+
+    /**
+     * Update summary statistics
+     */
+    function updateSummaryStats(data) {
+        const comparisonResults = data.comparison_results || {};
+        const servers = Object.keys(comparisonResults);
+
+        // Count tables with change tracking (from primary)
+        const tablesCount = data.tables_with_change_tracking ? data.tables_with_change_tracking.length : 0;
+        document.getElementById('summary-tables-count').textContent = tablesCount;
+
+        // Total servers (secondary)
+        document.getElementById('summary-total-servers').textContent = servers.length;
+
+        // Count synced vs out-of-sync
+        let syncedCount = 0;
+        let outOfSyncCount = 0;
+
+        servers.forEach(serverName => {
+            const comparisonData = comparisonResults[serverName];
             if (comparisonData.status === 'error') {
-                section.innerHTML += `<div style="background-color: #FFF3E0; padding: 1rem; border-radius: 4px; color: #E65100;"><strong>Error:</strong> ${comparisonData.error}</div>`;
+                outOfSyncCount++;
+            } else if (comparisonData.differences_found) {
+                outOfSyncCount++;
             } else {
-                // Create comparison table - only show tables with differences
-                let html = `
-                    <table class="comparison-table">
+                syncedCount++;
+            }
+        });
+
+        document.getElementById('summary-servers-synced').textContent = syncedCount;
+        document.getElementById('summary-servers-diff').textContent = outOfSyncCount;
+    }
+
+    /**
+     * Render content for primary server tab
+     */
+    function renderPrimaryServerContent(data) {
+        const tables = data.tables_with_change_tracking || [];
+        return `
+            <div class="server-header">
+                <h3>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                    </svg>
+                    Primary Server (Reference)
+                </h3>
+                <span class="status-badge synced">${tables.length} Tables</span>
+            </div>
+            <div class="server-content" style="padding: 1rem;">
+                <p style="color: #666; margin-top: 0;">
+                    <strong>Primary Server:</strong> ${data.primary_server}<br>
+                    <strong>Tables with Change Tracking:</strong> ${tables.length}
+                </p>
+                <h4 style="margin-bottom: 0.5rem;">Monitored Tables</h4>
+                <div style="overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 4px;">
+                    <table class="comparison-table" style="margin: 0;">
                         <thead>
                             <tr>
                                 <th>Table Name</th>
-                                <th style="text-align: right;">Difference Only</th>
+                                <th style="text-align: center;">Status</th>
                             </tr>
                         </thead>
                         <tbody>
-                `;
+                            ${tables.map(t => `
+                                <tr>
+                                    <td>${t}</td>
+                                    <td style="text-align: center;"><span class="diff-badge diff-positive">Tracked</span></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    }
 
-                // Filter to only show tables with differences (excluding ignored tables)
-                const tables = comparisonData.tables || {};
-                const diffTables = Object.entries(tables).filter(([tableName, tableData]) => {
-                    // Filter out ignored tables
-                    if (IGNORE_TABLES.includes(tableName)) {
-                        return false;
-                    }
-                    return !tableData.match;
-                });
+    /**
+     * Render content for a secondary server tab
+     */
+    function renderServerContent(serverName, comparisonData) {
+        if (comparisonData.status === 'error') {
+            return `
+                <div class="server-header">
+                    <h3>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                        </svg>
+                        ${serverName}
+                    </h3>
+                    <span class="status-badge error">Connection Error</span>
+                </div>
+                <div class="server-content" style="padding: 1rem;">
+                    <div style="background-color: #FFF3E0; padding: 1rem; border-radius: 4px; color: #E65100;">
+                        <strong>Error:</strong> ${comparisonData.error}
+                    </div>
+                </div>
+            `;
+        }
 
-                if (diffTables.length === 0) {
-                    html += `
-                        <tr>
-                            <td colspan="2" style="text-align: center; color: #4CAF50; padding: 1rem;">
-                                All tables in sync - no differences found
-                            </td>
-                        </tr>
-                    `;
-                } else {
-                    // Sort by table name
-                    diffTables.sort(([a], [b]) => a.localeCompare(b));
+        const tables = comparisonData.tables || {};
+        const matchingTables = Object.entries(tables).filter(([name, data]) => data.match);
+        const diffTables = Object.entries(tables).filter(([name, data]) => !data.match);
 
-                    for (const [tableName, tableData] of diffTables) {
-                        let diffBadge = '';
-                        if (typeof tableData.difference === 'number') {
-                            const diffClass = tableData.difference > 0 ? 'diff-positive' : (tableData.difference < 0 ? 'diff-negative' : '');
-                            const sign = tableData.difference > 0 ? '+' : '';
-                            diffBadge = `<span class="diff-badge ${diffClass}">${sign}${tableData.difference.toLocaleString()}</span>`;
-                        } else if (tableData.status === 'missing') {
-                            diffBadge = `<span class="diff-badge diff-negative">Missing</span>`;
-                        } else if (tableData.status === 'extra') {
-                            diffBadge = `<span class="diff-badge diff-positive">Extra</span>`;
-                        }
+        const diffCount = diffTables.length;
+        const badgeClass = diffCount > 0 ? 'out-of-sync' : 'synced';
 
-                        html += `
-                            <tr>
-                                <td><strong>${tableName}</strong></td>
-                                <td style="text-align: right;">${diffBadge}</td>
-                            </tr>
-                        `;
-                    }
+        let html = `
+            <div class="server-header">
+                <h3>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        ${diffCount > 0
+                            ? '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>'
+                            : '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>'}
+                    </svg>
+                    vs ${serverName}
+                </h3>
+                <span class="status-badge ${badgeClass}">${diffCount} Out of Sync</span>
+            </div>
+            <div class="server-content">
+        `;
+
+        if (diffTables.length === 0) {
+            html += `
+                <div style="padding: 2rem; text-align: center; color: #4CAF50;">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="#4CAF50" style="margin-bottom: 0.5rem;">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                    </svg>
+                    <h3 style="margin: 0 0 0.5rem 0;">All Tables Synced</h3>
+                    <p style="color: #666; margin: 0;">No differences found between primary and ${serverName}.</p>
+                </div>
+            `;
+        } else {
+            // Sort by table name alphabetically by default
+            diffTables.sort((a, b) => a[0].localeCompare(b[0]));
+
+            html += `
+                <div style="padding: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h4 style="margin: 0;">Tables with Differences (${diffTables.length})</h4>
+                        <button onclick="exportToCsv('${serverName}')" style="padding: 0.5rem 1rem; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                            </svg>
+                            Export to CSV
+                        </button>
+                    </div>
+                    <div style="overflow-y: auto;">
+                        <table class="comparison-table" id="diff-table-${serverName.replace(/\./g, '-')}">
+                            <thead>
+                                <tr>
+                                    <th class="sortable" onclick="sortTable('${serverName}', 'tableName', this)" style="cursor: pointer;">
+                                        Table Name
+                                        <span class="sort-icon">▲</span>
+                                    </th>
+                                    <th style="text-align: right;">Primary</th>
+                                    <th style="text-align: right;">${serverName}</th>
+                                    <th class="sortable" onclick="sortTable('${serverName}', 'difference', this)" style="cursor: pointer;">
+                                        Difference
+                                        <span class="sort-icon">▲</span>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody class="table-body">
+            `;
+
+            for (const [tableName, tableData] of diffTables) {
+                if (IGNORE_TABLES.includes(tableName)) continue;
+
+                let diffBadge = '';
+                let diffValue = 0;
+                if (typeof tableData.difference === 'number') {
+                    diffValue = tableData.difference;
+                    const diffClass = tableData.difference > 0 ? 'diff-positive' : (tableData.difference < 0 ? 'diff-negative' : '');
+                    const sign = tableData.difference > 0 ? '+' : '';
+                    diffBadge = `<span class="diff-badge ${diffClass}">${sign}${tableData.difference}</span>`;
+                } else if (tableData.status === 'missing') {
+                    diffBadge = `<span class="diff-badge diff-negative">Missing</span>`;
+                } else if (tableData.status === 'extra') {
+                    diffBadge = `<span class="diff-badge diff-positive">Extra</span>`;
                 }
 
                 html += `
-                        </tbody>
-                    </table>
+                    <tr data-table-name="${tableName}" data-difference="${diffValue}">
+                        <td><strong>${tableName}</strong></td>
+                        <td style="text-align: right;">${tableData.primary_count ?? 'N/A'}</td>
+                        <td style="text-align: right;">${tableData.secondary_count ?? 'N/A'}</td>
+                        <td style="text-align: right;">${diffBadge}</td>
+                    </tr>
                 `;
-
-                section.innerHTML += html;
             }
 
-            container.appendChild(section);
+            html += `
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
         }
+
+        html += '</div>';
+        return html;
+    }
+
+    /**
+     * Switch between tabs
+     */
+    function switchTab(tabId) {
+        // Update tab buttons
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.classList.remove('active');
+        });
+        const activeTab = document.getElementById(`tab-${tabId}`);
+        if (activeTab) {
+            activeTab.classList.add('active');
+        }
+
+        // Update tab contents
+        document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.remove('active');
+        });
+        const activeContent = document.getElementById(`content-${tabId}`);
+        if (activeContent) {
+            activeContent.classList.add('active');
+        }
+    }
+
+    /**
+     * Export table data to CSV
+     */
+    function exportToCsv(serverName) {
+        const tableId = `diff-table-${serverName.replace(/\./g, '-')}`;
+        const table = document.getElementById(tableId);
+        if (!table) return;
+
+        const tbody = table.querySelector('.table-body');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+
+        // CSV header
+        let csv = 'Table Name,Primary Count,Secondary Count,Difference\n';
+
+        // Add data rows
+        rows.forEach(row => {
+            const tableName = row.getAttribute('data-table-name') || '';
+            const primaryCount = row.cells[1]?.textContent?.trim() || '';
+            const secondaryCount = row.cells[2]?.textContent?.trim() || '';
+            const diffValue = row.getAttribute('data-difference') || '';
+            csv += `"${tableName}",${primaryCount},${secondaryCount},${diffValue}\n`;
+        });
+
+        // Generate filename: IP_Diff_Timestamp.csv
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const filename = `${serverName}_Diff_${timestamp}.csv`;
+
+        // Download CSV
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(link.href);
+    }
+
+    /**
+     * Sort table by column
+     */
+    function sortTable(serverName, column, thElement) {
+        const tableId = `diff-table-${serverName.replace(/\./g, '-')}`;
+        const table = document.getElementById(tableId);
+        if (!table) return;
+
+        const tbody = table.querySelector('.table-body');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+
+        // Get current sort state
+        const isAsc = thElement.classList.contains('sorted-asc');
+
+        // Remove sorted class from all headers
+        table.querySelectorAll('th').forEach(th => {
+            th.classList.remove('sorted', 'sorted-asc', 'sorted-desc');
+        });
+
+        // Add sorted class and set direction
+        thElement.classList.add('sorted');
+        if (isAsc) {
+            thElement.classList.add('sorted-desc');
+            thElement.querySelector('.sort-icon').textContent = '▼';
+        } else {
+            thElement.classList.add('sorted-asc');
+            thElement.querySelector('.sort-icon').textContent = '▲';
+        }
+
+        // Sort rows
+        rows.sort((a, b) => {
+            let valA, valB;
+
+            if (column === 'tableName') {
+                valA = a.getAttribute('data-table-name');
+                valB = b.getAttribute('data-table-name');
+                return isAsc ? valB.localeCompare(valA) : valA.localeCompare(valB);
+            } else if (column === 'difference') {
+                valA = parseInt(a.getAttribute('data-difference')) || 0;
+                valB = parseInt(b.getAttribute('data-difference')) || 0;
+                return isAsc ? valB - valA : valA - valB;
+            }
+            return 0;
+        });
+
+        // Re-append sorted rows
+        rows.forEach(row => tbody.appendChild(row));
     }
 
     /**
@@ -568,8 +764,6 @@
     // Fetch table count data on page load
     document.addEventListener('DOMContentLoaded', function() {
         fetchTableCountData();
-        // Refresh every 30 seconds
-        setInterval(fetchTableCountData, POLLING_INTERVAL);
     });
 </script>
 {% endblock %}
