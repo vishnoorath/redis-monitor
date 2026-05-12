@@ -460,13 +460,15 @@
     }
 
     /**
-     * Count tables with differences for a server
+     * Count tables with differences for a server (excluding ignored tables)
      */
     function countDiffs(comparisonData) {
         if (!comparisonData || comparisonData.status === 'error' || !comparisonData.tables) {
             return 0;
         }
-        return Object.values(comparisonData.tables).filter(t => !t.match).length;
+        return Object.entries(comparisonData.tables)
+            .filter(([name, t]) => !t.match && !IGNORE_TABLES.includes(name))
+            .length;
     }
 
     /**
@@ -483,7 +485,7 @@
         // Total servers (secondary)
         document.getElementById('summary-total-servers').textContent = servers.length;
 
-        // Count synced vs out-of-sync
+        // Count synced vs out-of-sync (using countDiffs to respect ignored tables)
         let syncedCount = 0;
         let outOfSyncCount = 0;
 
@@ -491,7 +493,7 @@
             const comparisonData = comparisonResults[serverName];
             if (comparisonData.status === 'error') {
                 outOfSyncCount++;
-            } else if (comparisonData.differences_found) {
+            } else if (countDiffs(comparisonData) > 0) {
                 outOfSyncCount++;
             } else {
                 syncedCount++;
@@ -570,7 +572,10 @@
 
         const tables = comparisonData.tables || {};
         const matchingTables = Object.entries(tables).filter(([name, data]) => data.match);
-        const diffTables = Object.entries(tables).filter(([name, data]) => !data.match);
+
+        // Filter out ignored tables from the difference count and display
+        const allDiffTables = Object.entries(tables).filter(([name, data]) => !data.match);
+        const diffTables = allDiffTables.filter(([name, data]) => !IGNORE_TABLES.includes(name));
 
         const diffCount = diffTables.length;
         const badgeClass = diffCount > 0 ? 'out-of-sync' : 'synced';
