@@ -7,8 +7,9 @@ import os
 import pyodbc
 from pathlib import Path
 from dotenv import load_dotenv
+from src import settings_db
 
-# Load environment variables from .env file
+# Load environment variables from .env file (for fallback)
 env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(env_path)
 
@@ -17,12 +18,33 @@ class SQLServer:
     """SQL Server connection and query handler."""
 
     def __init__(self):
-        """Initialize SQL Server connection parameters from environment variables."""
-        self.server = os.getenv('SQL_SERVER', 'localhost')
-        self.port = os.getenv('SQL_PORT', '1433')
-        self.database = os.getenv('SQL_DATABASE', 'NitaraDB')
-        self.username = os.getenv('SQL_USERNAME', 'sa')
-        self.password = os.getenv('SQL_PASSWORD', '')
+        """Initialize SQL Server connection parameters from settings database or environment."""
+        # Try to get primary server from settings database
+        servers = settings_db.get_setting_parsed('SERVERS')
+        primary_server = None
+        
+        if servers and isinstance(servers, list):
+            for s in servers:
+                if s.get('isPrimary', False):
+                    primary_server = s
+                    break
+            if not primary_server and len(servers) > 0:
+                primary_server = servers[0]
+        
+        if primary_server:
+            self.server = primary_server.get('server', 'localhost')
+            self.port = primary_server.get('port', '1433')
+            self.database = primary_server.get('db', 'NitaraDB')
+            self.username = primary_server.get('user', 'sa')
+            self.password = primary_server.get('password', '')
+        else:
+            # Fallback to environment variables
+            self.server = os.getenv('SQL_SERVER', 'localhost')
+            self.port = os.getenv('SQL_PORT', '1433')
+            self.database = os.getenv('SQL_DATABASE', 'NitaraDB')
+            self.username = os.getenv('SQL_USERNAME', 'sa')
+            self.password = os.getenv('SQL_PASSWORD', '')
+            
         self.connection = None
         self.connection_string = self._build_connection_string()
 
