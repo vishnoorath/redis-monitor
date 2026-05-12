@@ -287,12 +287,47 @@
         opacity: 1;
         color: #667eea;
     }
+
+    /* Sync button styles */
+    .sync-btn {
+        padding: 0.5rem 1rem;
+        background: #764ba2;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        margin-left: 0.5rem;
+    }
+
+    .sync-btn:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+    }
+
+    .sync-btn:hover:not(:disabled) {
+        background: #663399;
+    }
+
+    /* Loading spinner animation */
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 <!-- Table Count Comparison with Tabs -->
 <div class="card">
+    <!-- Sync Loading Overlay -->
+    <div id="sync-loading-overlay" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center;">
+        <div style="background: white; padding: 2rem; border-radius: 8px; text-align: center;">
+            <div style="border: 4px solid #f3f3f3; border-top: 4px solid #764ba2; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 1rem;"></div>
+            <p id="sync-loading-message" style="margin: 0; color: #333;">Syncing tables...</p>
+        </div>
+    </div>
+
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
         <h2 style="margin: 0; border: none; padding: 0;">SQL Replication Status</h2>
         <div style="font-size: 0.9rem; color: #666;">
@@ -572,18 +607,34 @@
             html += `
                 <div style="padding: 1rem;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                        <h4 style="margin: 0;">Tables with Differences (${diffTables.length})</h4>
-                        <button onclick="exportToCsv('${serverName}')" style="padding: 0.5rem 1rem; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem;">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
-                            </svg>
-                            Export to CSV
-                        </button>
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            <h4 style="margin: 0;">Tables with Differences (${diffTables.length})</h4>
+                            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.85rem;">
+                                <input type="checkbox" id="select-all-${serverName.replace(/\./g, '-')}" onchange="toggleSelectAll('${serverName}', this.checked)" style="cursor: pointer;">
+                                Select All
+                            </label>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button onclick="exportToCsv('${serverName}')" style="padding: 0.5rem 1rem; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                                </svg>
+                                Export
+                            </button>
+                            <button onclick="syncSelectedTables('${serverName}')" id="sync-btn-${serverName.replace(/\./g, '-')}" style="padding: 0.5rem 1rem; background-color: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem;" disabled>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
+                                </svg>
+                                Sync Selected (0)
+                            </button>
+                        </div>
                     </div>
+                    <div id="sync-status-${serverName.replace(/\./g, '-')}" style="margin-bottom: 1rem;"></div>
                     <div style="overflow-y: auto;">
                         <table class="comparison-table" id="diff-table-${serverName.replace(/\./g, '-')}">
                             <thead>
                                 <tr>
+                                    <th style="width: 40px;"></th>
                                     <th class="sortable" onclick="sortTable('${serverName}', 'tableName', this)" style="cursor: pointer;">
                                         Table Name
                                         <span class="sort-icon">▲</span>
@@ -617,6 +668,9 @@
 
                 html += `
                     <tr data-table-name="${tableName}" data-difference="${diffValue}">
+                        <td style="text-align: center;">
+                            <input type="checkbox" class="table-checkbox" data-server="${serverName}" data-table="${tableName}" onchange="updateSyncButton('${serverName}')" style="cursor: pointer;">
+                        </td>
                         <td><strong>${tableName}</strong></td>
                         <td style="text-align: right;">${tableData.primary_count ?? 'N/A'}</td>
                         <td style="text-align: right;">${tableData.secondary_count ?? 'N/A'}</td>
@@ -743,6 +797,144 @@
 
         // Re-append sorted rows
         rows.forEach(row => tbody.appendChild(row));
+    }
+
+    /**
+     * Toggle select all checkboxes for a server
+     */
+    function toggleSelectAll(serverName, checked) {
+        const tableId = `diff-table-${serverName.replace(/\./g, '-')}`;
+        const table = document.getElementById(tableId);
+        if (!table) return;
+
+        const checkboxes = table.querySelectorAll('.table-checkbox');
+        checkboxes.forEach(cb => {
+            cb.checked = checked;
+        });
+        updateSyncButton(serverName);
+    }
+
+    /**
+     * Update sync button count and enabled state
+     */
+    function updateSyncButton(serverName) {
+        const tableId = `diff-table-${serverName.replace(/\./g, '-')}`;
+        const table = document.getElementById(tableId);
+        if (!table) return;
+
+        const checkboxes = table.querySelectorAll('.table-checkbox:checked');
+        const count = checkboxes.length;
+
+        const btnId = `sync-btn-${serverName.replace(/\./g, '-')}`;
+        const btn = document.getElementById(btnId);
+        if (btn) {
+            btn.textContent = `Sync Selected (${count})`;
+            btn.disabled = count === 0;
+        }
+    }
+
+    /**
+     * Sync selected tables to secondary server
+     */
+    async function syncSelectedTables(serverName) {
+        const tableId = `diff-table-${serverName.replace(/\./g, '-')}`;
+        const table = document.getElementById(tableId);
+        if (!table) return;
+
+        // Get selected tables
+        const checkboxes = table.querySelectorAll('.table-checkbox:checked');
+        const selectedTables = Array.from(checkboxes).map(cb => cb.getAttribute('data-table'));
+
+        if (selectedTables.length === 0) {
+            alert('Please select at least one table to sync.');
+            return;
+        }
+
+        // Show loading overlay
+        const loadingOverlay = document.getElementById('sync-loading-overlay');
+        const loadingMessage = document.getElementById('sync-loading-message');
+        if (loadingOverlay) {
+            loadingMessage.textContent = `Syncing ${selectedTables.length} table(s) to ${serverName}...`;
+            loadingOverlay.style.display = 'flex';
+        }
+
+        try {
+            const response = await fetch('/api/replication/sync', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    server: serverName,
+                    tables: selectedTables
+                })
+            });
+
+            const result = await response.json();
+
+            // Hide loading overlay
+            if (loadingOverlay) {
+                loadingOverlay.style.display = 'none';
+            }
+
+            // Show results
+            showSyncResults(serverName, result);
+
+        } catch (error) {
+            // Hide loading overlay
+            if (loadingOverlay) {
+                loadingOverlay.style.display = 'none';
+            }
+            alert(`Sync failed: ${error.message}`);
+        }
+    }
+
+    /**
+     * Show sync results in a modal
+     */
+    function showSyncResults(serverName, result) {
+        let html = `<h3>Sync Results for ${serverName}</h3>`;
+
+        if (result.error) {
+            html += `<p style="color: red;">Error: ${result.error}</p>`;
+        } else if (result.results && result.results.length > 0) {
+            html += '<table style="width: 100%; border-collapse: collapse; margin-top: 10px;">';
+            html += '<tr style="background: #f0f0f0;"><th style="padding: 8px; border: 1px solid #ddd;">Table</th><th style="padding: 8px; border: 1px solid #ddd;">Status</th><th style="padding: 8px; border: 1px solid #ddd;">Details</th></tr>';
+
+            result.results.forEach(r => {
+                const statusColor = r.status === 'success' ? 'green' : (r.status === 'error' ? 'red' : 'orange');
+                const statusText = r.status === 'success' ? 'Success' : (r.status === 'error' ? 'Error' : 'Skipped');
+                const details = r.status === 'success' ? `Rows affected: ${r.rows_affected || 0}` : (r.error || '');
+
+                html += `<tr>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${r.table}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; color: ${statusColor}; font-weight: bold;">${statusText}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${details}</td>
+                </tr>`;
+            });
+            html += '</table>';
+        }
+
+        // Create and show modal
+        const modal = document.createElement('div');
+        modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;';
+        modal.innerHTML = `
+            <div style="background: white; padding: 20px; border-radius: 8px; max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto;">
+                ${html}
+                <div style="margin-top: 15px; text-align: right;">
+                    <button onclick="this.closest('div').remove(); location.reload();" style="padding: 8px 20px; background: #764ba2; color: white; border: none; border-radius: 4px; cursor: pointer;">Close & Refresh</button>
+                    <button onclick="this.closest('div').remove();" style="padding: 8px 20px; background: #ccc; color: #333; border: none; border-radius: 4px; cursor: pointer; margin-left: 10px;">Close</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        // Close on background click
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
     }
 
     /**

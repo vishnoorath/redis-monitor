@@ -690,6 +690,85 @@ def replication_table_counts():
         }), 500
 
 
+@app.route('/api/replication/sync', methods=['POST'])
+def sync_tables():
+    """
+    Sync specified tables from primary to secondary server.
+    Calls usp_GenerateSyncScript_VR on primary to generate script, then executes on secondary.
+    ---
+    tags:
+      - Replication Monitoring
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - server
+            - tables
+          properties:
+            server:
+              type: string
+              example: 10.10.98.66
+              description: Secondary server IP/name
+            tables:
+              type: array
+              items:
+                type: string
+              example: ["Farms", "Cattles"]
+              description: List of table names to sync
+    responses:
+      200:
+        description: Sync results per table
+      400:
+        description: Missing required fields
+      500:
+        description: Server error
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'message': 'Request body required'
+            }), 400
+
+        server = data.get('server')
+        tables = data.get('tables', [])
+
+        if not server:
+            return jsonify({
+                'status': 'error',
+                'message': 'Missing required field: server'
+            }), 400
+
+        if not tables or not isinstance(tables, list):
+            return jsonify({
+                'status': 'error',
+                'message': 'Missing or invalid field: tables (must be a non-empty array)'
+            }), 400
+
+        # Import and call the sync function
+        from src.replication_monitor import sync_tables_to_secondary
+        results = sync_tables_to_secondary(server, tables)
+
+        return jsonify(results), 200
+
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"\n!!! SYNC ERROR !!!")
+        print(error_trace)
+        print("!!! END ERROR !!!\n")
+        return jsonify({
+            'status': 'error',
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
+
+
 @app.errorhandler(404)
 def not_found(error):
     """Handle 404 errors."""

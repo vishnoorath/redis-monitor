@@ -356,9 +356,145 @@ class ReplicationMonitor:
 def get_replication_status() -> Dict[str, Any]:
     """
     Get current replication status by comparing all servers.
-    
+
     Returns:
         Dict with comparison results
     """
     monitor = ReplicationMonitor()
     return monitor.compare_servers()
+
+
+def sync_tables_to_secondary(server: str, table_names: List[str]) -> Dict[str, Any]:
+    """
+    Sync specified tables from primary server to a secondary server.
+    Calls usp_GenerateSyncScript_VR on primary to generate sync script,
+    then executes it on the secondary server.
+
+    Args:
+        server: Secondary server name/IP
+        table_names: List of table names to sync
+
+    Returns:
+        Dict with sync results per table
+    """
+    monitor = ReplicationMonitor()
+    servers = monitor.get_servers()
+
+    # Find primary and secondary server configs
+    primary_config = None
+    secondary_config = None
+
+    for s in servers:
+        if s.get('isPrimary', False):
+            primary_config = s
+        if s['server'] == server:
+            secondary_config = s
+
+    if not primary_config:
+        return {'status': 'error', 'error': 'Primary server not found in configuration'}
+
+    if not secondary_config:
+        return {'status': 'error', 'error': f'Secondary server {server} not found in configuration'}
+
+    # Get database name from primary config
+    db_name = primary_config.get('db', 'NitaraDB')
+    db_user = primary_config.get('user')
+    db_password = primary_config.get('password')
+    db_port = primary_config.get('port', '1433')
+
+    results = {
+        'status': 'success',
+        'server': server,
+        'table_count': len(table_names),
+        'results': []
+    }
+
+    try:
+        for table_name in table_names:
+            sync_result = {
+                'table': table_name,
+                'status': 'pending',
+                'script': None,
+                'error': None
+            }
+
+            try:
+                # Connect to primary server and call stored procedure to generate script
+                primary_conn_string = (
+                    f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+                    f"SERVER={primary_config['server']},{db_port};"
+                    f"DATABASE={db_name};"
+                    f"UID={db_user};"
+                    f"PWD={db_password};"
+                    f"TrustServerCertificate=yes;"
+                    f"Encrypt=yes;"
+                )
+
+                primary_conn = pyodbc.connect(primary_conn_string)
+                primary_cursor = primary_conn.cursor()
+
+                # Call stored procedure to generate sync script
+                primary_cursor.execute("""
+                    EXEC dbo.usp_GenerateSyncScript_VR @TableName = ?
+                """, (table_name,))
+
+                script_result = primary_cursor.fetchone()
+                if script_result and script_result[0]:
+                    sync_result['script'] = script_result[0]
+                else:
+                    sync_result['status'] = 'skipped'
+                    sync_result['error'] = 'No sync script generated (table may be in sync)'
+                    primary_cursor.close()
+                    primary_conn.close()
+                    results['results'].append(sync_result)
+                    continue
+
+                primary_cursor.close()
+                primary_conn.close()
+
+                # Connect to secondary server and execute the script
+                secondary_db_user = secondary_config.get('user')
+                secondary_db_password = secondary_config.get('password')
+                secondary_db_name = secondary_config.get('db', 'NitaraDB')
+                secondary_db_port = secondary_config.get('port', '1433')
+
+                secondary_conn_string = (
+                    f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+                    f"SERVER={secondary_config['server']},{secondary_db_port};"
+                    f"DATABASE={secondary_db_name};"
+                    f"UID={secondary_db_user};"
+                    f"PWD={secondary_db_password};"
+                    f"TrustServerCertificate=yes;"
+                    f"Encrypt=yes;"
+                )
+
+                secondary_conn = pyodbc.connect(secondary_conn_string)
+                secondary_cursor = secondary_conn.cursor()
+
+                # Execute the sync script
+                secondary_cursor.execute(sync_result['script'])
+                secondary_conn.commit()
+
+                # Get rows affected
+                rows_affected = secondary_cursor.rowcount
+
+                secondary_cursor.close()
+                secondary_conn.close()
+
+                sync_result['status'] = 'success'
+                sync_result['rows_affected'] = rows_affected
+
+            except pyodbc.Error as e:
+                sync_result['status'] = 'error'
+                sync_result['error'] = str(e)
+            except Exception as e:
+                sync_result['status'] = 'error'
+                sync_result['error'] = str(e)
+
+            results['results'].append(sync_result)
+
+    except Exception as e:
+        results['status'] = 'error'
+        results['error'] = str(e)
+
+    return results

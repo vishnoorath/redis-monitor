@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(Get-Content *)",
-      "Bash(pwsh *)"
+      "Bash(pwsh *)",
+      "Bash(Get-ChildItem -Path . -Recurse -Directory)",
+      "Bash(Select-Object -First 30 FullName)"
     ]
   }
 }
