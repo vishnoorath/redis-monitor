@@ -4,6 +4,7 @@ deepdiff
 python-dotenv
 dotenv
 pyodbc
+confluent-kafka
 
 Flask==3.0.0
 Werkzeug==3.0.0

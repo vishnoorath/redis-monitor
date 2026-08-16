@@ -1,402 +1,131 @@
 {% extends "base.html" %}
 
-{% block title %}Redis Monitor - Dashboard{% endblock %}
-
-{% block extra_css %}
-<style>
-    /* Section Headers */
-    .section-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 1.5rem;
-        padding-bottom: 1rem;
-    }
-
-    .section-title {
-        font-size: 1.2rem;
-        font-weight: bold;
-        margin: 0;
-    }
-
-    .section-status {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        font-size: 0.9rem;
-        color: #666;
-    }
-
-    .status-dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        display: inline-block;
-    }
-
-    .status-dot.green { background-color: #4CAF50; }
-    .status-dot.orange { background-color: #FF9800; }
-    .status-dot.red { background-color: #F44336; }
-    .status-dot.pulsing {
-        animation: pulse 2s infinite;
-    }
-
-    @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.5; }
-    }
-
-    /* Stats Grid - Common for both sections */
-    .stats-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 1rem;
-        margin-bottom: 2rem;
-    }
-
-    .stat-card {
-        background: white;
-        padding: 1rem;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    }
-
-    .stat-card h4 {
-        font-size: 0.85rem;
-        margin-bottom: 0.5rem;
-        text-transform: uppercase;
-    }
-
-    .stat-card .value {
-        font-size: 1.8rem;
-        font-weight: bold;
-        color: #333;
-    }
-
-    .stat-card .value.success { color: #4CAF50; }
-    .stat-card .value.warning { color: #FF9800; }
-    .stat-card .value.error { color: #F44336; }
-
-    /* Redis Section */
-    .redis-header {
-        border-bottom: 2px solid #667eea;
-    }
-
-    .redis-title {
-        color: #667eea;
-    }
-
-    .redis-header h4 {
-        color: #667eea;
-    }
-
-    /* SQL Section */
-    .sql-header {
-        border-bottom: 2px solid #764ba2;
-    }
-
-    .sql-title {
-        color: #764ba2;
-    }
-
-    .sql-header h4 {
-        color: #764ba2;
-    }
-</style>
-{% endblock %}
+{% block title %}Dashboard — Nitara BAM{% endblock %}
 
 {% block content %}
-<!-- Redis Cache Monitoring Section -->
-<div class="section-header redis-header">
-    <h2 class="section-title redis-title">Redis Cache Monitoring</h2>
-    <div class="section-status">
-        <span class="status-dot green pulsing" id="redis-connection-dot"></span>
-        <span>Last updated: <span id="last-update-time">--:--:--</span></span>
+<div class="page-header">
+    <div>
+        <div class="panel-eyebrow">Overview</div>
+        <h1 class="page-title">Replication Dashboard</h1>
+        <div class="page-subtitle">
+            Live row-count drift across primary and secondary servers for {{ active_environment.display_name }}.
+        </div>
+    </div>
+    <div>
+        <a href="/sql-status" class="btn btn-secondary">Open SQL Replication →</a>
     </div>
 </div>
 
-<div class="stats-grid" id="monitoring-stats">
-    <div class="stat-card redis-header">
-        <h4>Identical</h4>
-        <div class="value success" id="stat-identical">-</div>
+<div class="panel">
+    <div class="panel-head">
+        <div>
+            <div class="panel-eyebrow">Primary / Secondary Drift</div>
+            <div class="panel-title">Tables with differences</div>
+        </div>
+        <div>
+            <span class="dot green"></span>
+            <span class="form-hint" style="display:inline-block; margin-left:6px;">
+                Last update: <span id="last-update-time" style="font-family:var(--font-mono);">--:--:--</span>
+            </span>
+        </div>
     </div>
-    <div class="stat-card redis-header">
-        <h4>Different</h4>
-        <div class="value warning" id="stat-different">-</div>
-    </div>
-    <div class="stat-card redis-header">
-        <h4>Error</h4>
-        <div class="value error" id="stat-error">-</div>
-    </div>
-    <div class="stat-card redis-header">
-        <h4>Total Monitored</h4>
-        <div class="value" id="stat-total">-</div>
-    </div>
-</div>
-
-<!-- SQL Replication Status Section -->
-<div class="section-header sql-header">
-    <h2 class="section-title sql-title">SQL Replication Status</h2>
-    <div class="section-status">
-        <span class="status-dot green" id="sql-connection-dot"></span>
-        <span>Last updated: <span id="sql-update-time">--:--:--</span></span>
+    <div class="stat-grid" id="server-stats-container">
+        <div class="stat">
+            <div class="stat-label">Tables monitored</div>
+            <div class="stat-value" id="stat-tables-monitored">—</div>
+        </div>
     </div>
 </div>
 
-<!-- SQL Summary Stats - Table Differences per Server -->
-<div class="stats-grid" id="sql-stats-grid">
-    <div class="stat-card sql-header">
-        <h4>Tables Monitored</h4>
-        <div class="value" id="sql-tables-monitored">-</div>
+<div class="panel">
+    <div class="panel-head">
+        <div class="panel-title">Quick reference</div>
     </div>
-    <div id="server-stats-container"></div>
-</div>
-
-<!-- View Details Link -->
-<div style="text-align: center; margin-top: 1rem;">
-    <a href="/sql-status" style="color: #764ba2; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem;">
-        View Detailed Replication Status
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
-        </svg>
-    </a>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Value</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Active environment</td><td><code>{{ active_environment.display_name }} ({{ active_environment.value }})</code></td></tr>
+            <tr><td>Kafka topic</td><td><code>{{ active_environment.value }}_sync_changes_backlog</code></td></tr>
+            <tr>
+                <td>Kafka brokers</td>
+                <td>
+                    <code>{% if active_environment.kafka_brokers %}{{ active_environment.kafka_brokers }}{% else %}—{% endif %}</code>
+                    {% if active_environment.kafka_clustered %}<span class="badge" style="font-family:var(--font-mono);">clustered</span>{% else %}<span class="badge" style="font-family:var(--font-mono);">single</span>{% endif %}
+                </td>
+            </tr>
+            <tr><td>Last full refresh</td><td><span id="full-refresh-time" style="font-family:var(--font-mono);">--:--:--</span></td></tr>
+        </tbody>
+    </table>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-    // Global monitoring state
-    let monitoringInterval = null;
-    let POLLING_INTERVAL = 30000; // 30 seconds default, will be updated from settings
+    const POLLING_INTERVAL_MS = 30000;
 
-    /**
-     * Fetch settings from server
-     */
-    async function fetchSettings() {
-        try {
-            const response = await fetch('/api/settings');
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            const data = await response.json();
-            if (data.settings && data.settings.refresh_frequency) {
-                POLLING_INTERVAL = data.settings.refresh_frequency * 1000;
-                console.log(`Refresh frequency updated to ${data.settings.refresh_frequency} seconds`);
-            }
-        } catch (error) {
-            console.error('Error fetching settings:', error);
-        }
-    }
-
-    /**
-     * Fetch monitor data from /monitor endpoint and update the stat cards
-     */
-    async function fetchMonitorData() {
-        try {
-            const response = await fetch('/monitor');
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            const data = await response.json();
-            updateStatCards(data);
-            updateTimestamp();
-            // Update Redis connection status to connected
-            const connStatus = document.getElementById('redis-connection-status');
-            const connDot = document.getElementById('redis-connection-dot');
-            if (connStatus) {
-                connStatus.textContent = 'Connected';
-                connStatus.className = 'value success';
-            }
-            if (connDot) {
-                connDot.className = 'status-dot green pulsing';
-            }
-        } catch (error) {
-            console.error('Error fetching monitor data:', error);
-            // Update Redis connection status to error
-            const connStatus = document.getElementById('redis-connection-status');
-            const connDot = document.getElementById('redis-connection-dot');
-            if (connStatus) {
-                connStatus.textContent = 'Disconnected';
-                connStatus.className = 'value error';
-            }
-            if (connDot) {
-                connDot.className = 'status-dot red';
-                connDot.classList.remove('pulsing');
-            }
-        }
-    }
-
-    /**
-     * Update the stat cards with data from /monitor endpoint
-     * Response format: {"status": "...", "rows": [{"status": "Identical", "count": X}, ...], "total": X}
-     */
-    function updateStatCards(data) {
-        if (!data || !data.rows) return;
-
-        // Initialize counts
-        let counts = {
-            'Identical': 0,
-            'Different': 0,
-            'Error': 0
-        };
-
-        // Extract counts from rows
-        data.rows.forEach(row => {
-            if (row.status && row.count !== undefined) {
-                counts[row.status] = row.count;
-            }
-        });
-
-        // Update the stat cards
-        const identicalEl = document.getElementById('stat-identical');
-        const differentEl = document.getElementById('stat-different');
-        const errorEl = document.getElementById('stat-error');
-        const totalEl = document.getElementById('stat-total');
-
-        if (identicalEl) identicalEl.textContent = counts['Identical'];
-        if (differentEl) differentEl.textContent = counts['Different'];
-        if (errorEl) errorEl.textContent = counts['Error'];
-        if (totalEl) totalEl.textContent = data.total || 0;
-    }
-
-    /**
-     * Update the last updated timestamp
-     */
-    function updateTimestamp() {
-        const now = new Date();
-        const hours = String(now.getHours()).padStart(2, '0');
-        const minutes = String(now.getMinutes()).padStart(2, '0');
-        const seconds = String(now.getSeconds()).padStart(2, '0');
-        const timeString = `${hours}:${minutes}:${seconds}`;
-
-        const timeEl = document.getElementById('last-update-time');
-        if (timeEl) {
-            timeEl.textContent = timeString;
-        }
-    }
-
-    /**
-     * Start polling the /monitor endpoint every 30 seconds
-     */
-    function startMonitoring() {
-        console.log('Starting live monitoring...');
-        // Fetch immediately on start
-        fetchMonitorData();
-
-        // Then set up interval for every 30 seconds
-        monitoringInterval = setInterval(fetchMonitorData, POLLING_INTERVAL);
-        console.log('Live monitoring started. Updates every 30 seconds.');
-    }
-
-    /**
-     * Stop polling the /monitor endpoint
-     */
-    function stopMonitoring() {
-        if (monitoringInterval !== null) {
-            clearInterval(monitoringInterval);
-            monitoringInterval = null;
-            console.log('Live monitoring stopped.');
-        }
-    }
-
-    // Start monitoring when page loads
-    document.addEventListener('DOMContentLoaded', function() {
-        fetchSettings().then(() => {
-            startMonitoring();
-            fetchSqlReplicationData();
-            // Set up polling with dynamic interval
-            setInterval(fetchSqlReplicationData, POLLING_INTERVAL);
-        });
-    });
-
-    // Cleanup when page is unloaded
-    window.addEventListener('beforeunload', function() {
-        stopMonitoring();
-    });
-
-    /**
-     * Fetch SQL replication data from /api/replication/table-counts
-     */
-    async function fetchSqlReplicationData() {
+    async function fetchReplicationStats() {
         try {
             const response = await fetch('/api/replication/table-counts');
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
-            updateSqlStats(data);
-            updateSqlTimestamp();
-        } catch (error) {
-            console.error('Error fetching SQL replication data:', error);
-            // Update connection status to error
-            const connStatus = document.getElementById('sql-connection-status');
-            const connDot = document.getElementById('sql-connection-dot');
-            if (connStatus) {
-                connStatus.textContent = 'Disconnected';
-                connStatus.className = 'value error';
-            }
-            if (connDot) {
-                connDot.className = 'status-dot red';
-            }
+            renderStats(data);
+            setLastUpdate();
+        } catch (err) {
+            console.error('Error fetching replication stats:', err);
         }
     }
 
-    /**
-     * Update SQL stats in the UI with per-server table difference counts
-     */
-    function updateSqlStats(data) {
-        // Update tables monitored count
-        const tablesMonitored = document.getElementById('sql-tables-monitored');
-        const tablesCount = data.tables_with_change_tracking ? data.tables_with_change_tracking.length : 0;
-        if (tablesMonitored) tablesMonitored.textContent = tablesCount;
+    function renderStats(data) {
+        const tablesCount = (data.tables_with_change_tracking || []).length;
+        const tablesEl = document.getElementById('stat-tables-monitored');
+        if (tablesEl) tablesEl.textContent = tablesCount;
 
-        // Generate stat cards for each secondary server showing difference count
-        const serverStatsContainer = document.getElementById('server-stats-container');
-        if (!serverStatsContainer) return;
+        const container = document.getElementById('server-stats-container');
+        if (!container) return;
 
         const comparisonResults = data.comparison_results || {};
-        let html = '';
-
-        Object.entries(comparisonResults).forEach(([serverName, comparisonData]) => {
-            let diffCount = 0;
-            let hasError = false;
-            let errorMsg = '';
-
-            if (comparisonData.status === 'error') {
-                hasError = true;
-                errorMsg = comparisonData.error;
-            } else if (comparisonData.tables) {
-                diffCount = Object.values(comparisonData.tables).filter(t => !t.match).length;
+        const cards = Array.from(Object.entries(comparisonResults)).map(([server, info]) => {
+            let value, cls;
+            if (info.status === 'error') {
+                value = 'ERR'; cls = 'error';
+            } else if (info.tables) {
+                const diffCount = Object.values(info.tables).filter(t => !t.match).length;
+                value = diffCount;
+                cls = diffCount > 0 ? 'warning' : 'success';
+            } else {
+                value = '—'; cls = '';
             }
-
-            const valueClass = hasError ? 'error' : (diffCount > 0 ? 'warning' : 'success');
-            const displayValue = hasError ? 'Error' : diffCount;
-
-            html += `
-                <div class="stat-card sql-header">
-                    <h4>${serverName}</h4>
-                    <div class="value ${valueClass}" title="${hasError ? errorMsg : 'Table differences'}">${displayValue}</div>
-                </div>
-            `;
-        });
-
-        serverStatsContainer.innerHTML = html;
+            return `
+                <div class="stat">
+                    <div class="stat-label">${server}</div>
+                    <div class="stat-value ${cls}">${value}</div>
+                </div>`;
+        }).join('');
+        container.innerHTML = `
+            <div class="stat">
+                <div class="stat-label">Tables monitored</div>
+                <div class="stat-value">${tablesCount}</div>
+            </div>
+            ${cards}`;
     }
 
-    /**
-     * Update SQL timestamp
-     */
-    function updateSqlTimestamp() {
+    function setLastUpdate() {
         const now = new Date();
-        const hours = String(now.getHours()).padStart(2, '0');
-        const minutes = String(now.getMinutes()).padStart(2, '0');
-        const seconds = String(now.getSeconds()).padStart(2, '0');
-        const timeString = `${hours}:${minutes}:${seconds}`;
-
-        const timeEl = document.getElementById('sql-update-time');
-        if (timeEl) {
-            timeEl.textContent = timeString;
-        }
+        const t = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+        const el = document.getElementById('last-update-time');
+        if (el) el.textContent = t;
+        const fr = document.getElementById('full-refresh-time');
+        if (fr) fr.textContent = now.toISOString().replace('T', ' ').slice(0, 19);
     }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        fetchReplicationStats();
+        setInterval(fetchReplicationStats, POLLING_INTERVAL_MS);
+    });
 </script>
 {% endblock %}

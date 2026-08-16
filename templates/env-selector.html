@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Select Environment — Nitara BAM</title>
+    <style>
+        :root {
+            /* Lumina Precision design tokens */
+            --bg:                #ffffff;
+            --surface:           #f8fafc;
+            --surface-2:         #f1f5f9;
+            --border:            #e2e8f0;
+            --border-strong:     #cbd5e1;
+            --on-surface:        #0f172a;
+            --on-surface-muted:  #475569;
+            --primary:           #3b82f6;
+            --primary-hover:     #2563eb;
+            --on-primary:        #ffffff;
+            --primary-tint:      #eff6ff;
+            --radius:            0.25rem;
+            --shadow-pop:        0 10px 15px -3px rgba(15, 23, 42, 0.08),
+                                0 4px 6px -4px rgba(15, 23, 42, 0.04);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body {
+            height: 100%;
+            background: var(--bg);
+            color: var(--on-surface);
+            font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+            font-size: 14px;
+            line-height: 20px;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .env-shell {
+            display: flex;
+            min-height: 100vh;
+            align-items: center;
+            justify-content: center;
+            padding: 32px 16px;
+            background: var(--bg);
+        }
+
+        .env-panel {
+            width: 100%;
+            max-width: 560px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-pop);
+            overflow: hidden;
+        }
+
+        .env-header {
+            padding: 24px 24px 16px 24px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+        }
+
+        .env-eyebrow {
+            font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+            font-size: 11px;
+            letter-spacing: 0.05em;
+            color: var(--on-surface-muted);
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+
+        .env-title {
+            font-family: 'Hanken Grotesk', 'Inter', sans-serif;
+            font-size: 24px;
+            font-weight: 600;
+            line-height: 32px;
+            color: var(--on-surface);
+        }
+
+        .env-subtitle {
+            margin-top: 4px;
+            color: var(--on-surface-muted);
+            font-size: 14px;
+        }
+
+        .env-body {
+            padding: 24px;
+        }
+
+        .env-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .env-card {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: border-color 120ms ease, background-color 120ms ease;
+            font-family: inherit;
+            color: inherit;
+            text-align: left;
+            width: 100%;
+        }
+
+        .env-card:hover {
+            border-color: var(--primary);
+            background: var(--primary-tint);
+        }
+
+        .env-card:focus-visible {
+            outline: 2px solid var(--primary);
+            outline-offset: 2px;
+        }
+
+        .env-card-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            border-radius: 0.5rem;
+            background: var(--surface-2);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--on-surface);
+            flex-shrink: 0;
+        }
+
+        .env-card-text { display: flex; flex-direction: column; min-width: 0; }
+        .env-card-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--on-surface);
+            line-height: 24px;
+        }
+        .env-card-meta {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--on-surface-muted);
+            letter-spacing: 0.02em;
+        }
+
+        .env-footnote {
+            margin-top: 16px;
+            padding: 12px;
+            background: var(--surface);
+            border-left: 2px solid var(--border-strong);
+            border-radius: 0 var(--radius) var(--radius) 0;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: var(--on-surface-muted);
+        }
+    </style>
+</head>
+<body>
+    <div class="env-shell">
+        <div class="env-panel">
+            <div class="env-header">
+                <div class="env-eyebrow">Nitara BAM · Startup</div>
+                <h1 class="env-title">Select environment</h1>
+                <p class="env-subtitle">Choose the environment to operate against. Kafka topic and DB servers will switch accordingly.</p>
+            </div>
+            <form method="POST" action="/select-environment">
+                <div class="env-body">
+                    <div class="env-grid">
+                        {% for env in environments %}
+                        <button type="submit" name="env" value="{{ env.value }}" class="env-card">
+                            <span class="env-card-badge">{{ env.display_name[0] }}</span>
+                            <span class="env-card-text">
+                                <span class="env-card-name">{{ env.display_name }}</span>
+                                <span class="env-card-meta">{{ env.value }}_sync_changes_backlog</span>
+                            </span>
+                        </button>
+                        {% endfor %}
+                    </div>
+                    <div class="env-footnote">
+                        // Active env persists in settings.db · ACTIVE_ENVIRONMENT row.
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

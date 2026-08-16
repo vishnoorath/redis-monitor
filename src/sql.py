@@ -51,7 +51,7 @@ class SQLServer:
     def _build_connection_string(self):
         """Build the ODBC connection string for SQL Server."""
         return (
-            f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+            f"DRIVER={{ODBC Driver 17 for SQL Server}};"
             f"SERVER={self.server},{self.port};"
             f"DATABASE={self.database};"
             f"UID={self.username};"

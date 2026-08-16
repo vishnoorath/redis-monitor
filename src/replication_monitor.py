@@ -4,12 +4,15 @@ Monitors table row counts across multiple SQL Server databases and compares them
 """
 
 import pyodbc
-from typing import Dict, List, Any
+import logging
+from typing import Dict, List, Any, Optional
 from deepdiff import DeepDiff
 from datetime import datetime
 
 # Import settings database
 from src import settings_db
+
+logger = logging.getLogger(__name__)
 
 
 class ReplicationMonitor:
@@ -53,7 +56,7 @@ class ReplicationMonitor:
 
         try:
             connection_string = (
-                f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+                f"DRIVER={{ODBC Driver 17 for SQL Server}};"
                 f"SERVER={server},{db_port};"
                 f"DATABASE={db_name};"
                 f"UID={db_user};"
@@ -129,7 +132,7 @@ class ReplicationMonitor:
 
         try:
             connection_string = (
-                f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+                f"DRIVER={{ODBC Driver 17 for SQL Server}};"
                 f"SERVER={server},{db_port};"
                 f"DATABASE={db_name};"
                 f"UID={db_user};"
@@ -364,15 +367,87 @@ def get_replication_status() -> Dict[str, Any]:
     return monitor.compare_servers()
 
 
-def sync_tables_to_secondary(server: str, table_names: List[str]) -> Dict[str, Any]:
+def _push_clr_overrides_to_secondary(cursor, table_name: str) -> None:
+    """
+    Push the user-managed CLR cast overrides from SQLite (settings.db) into
+    the connected secondary's ``dbo.ClrColumnOverrides`` table.
+
+    Called immediately before ``usp_GetMissingRows_CLR`` runs, so the SP can
+    apply the user's preferred cast types for each CLR column it streams.
+
+    Idempotent — uses ``MERGE`` to upsert each row.
+    """
+    try:
+        overrides = settings_db.list_clr_overrides()
+    except Exception:
+        logger.exception("Failed to load CLR overrides from settings.db")
+        return
+
+    # Only push rows relevant to this table (plus keep the seed row).
+    relevant = [o for o in overrides if not table_name or o['table_name'] == table_name]
+    if not relevant:
+        return
+
+    # Make sure the table exists on the secondary (idempotent).
+    cursor.execute("""
+        IF OBJECT_ID('dbo.ClrColumnOverrides') IS NULL
+        BEGIN
+            CREATE TABLE dbo.ClrColumnOverrides (
+                table_name  NVARCHAR(256) NOT NULL,
+                column_name NVARCHAR(256) NOT NULL,
+                cast_as     NVARCHAR(64)  NOT NULL DEFAULT 'NVARCHAR(MAX)',
+                notes       NVARCHAR(500) NULL,
+                updated_at  DATETIME2     NOT NULL DEFAULT SYSUTCDATETIME(),
+                PRIMARY KEY (table_name, column_name)
+            );
+        END
+    """)
+    cursor.commit()
+
+    for o in relevant:
+        notes = o.get('notes') or ''
+        cursor.execute("""
+            MERGE dbo.ClrColumnOverrides AS tgt
+            USING (SELECT ? AS table_name, ? AS column_name) AS src
+                ON tgt.table_name = src.table_name AND tgt.column_name = src.column_name
+            WHEN MATCHED THEN
+                UPDATE SET cast_as = ?, notes = ?, updated_at = SYSUTCDATETIME()
+            WHEN NOT MATCHED THEN
+                INSERT (table_name, column_name, cast_as, notes)
+                VALUES (?, ?, ?, ?);
+        """, (
+            o['table_name'], o['column_name'],                # src
+            o['cast_as'],     notes,                          # update
+            o['table_name'], o['column_name'],                # insert
+            o['cast_as'],     notes,
+        ))
+    cursor.commit()
+    logger.debug("Pushed %d CLR override(s) for table '%s'", len(relevant), table_name)
+
+
+def sync_tables_to_secondary(
+    server: str,
+    table_names: List[str],
+    kafka_brokers: Optional[str] = None,
+    kafka_env: Optional[str] = None,
+    kafka_clustered: Optional[bool] = None,
+) -> Dict[str, Any]:
     """
     Sync specified tables from primary server to a secondary server.
     Calls usp_GenerateSyncScript_VR on primary to generate sync script,
-    then executes it on the secondary server.
+    then executes it on the secondary server. Also publishes the missing
+    rows to Kafka topic `{kafka_env}_sync_changes_backlog` if Kafka is
+    configured.
 
     Args:
         server: Secondary server name/IP
         table_names: List of table names to sync
+        kafka_brokers: Comma-separated bootstrap servers (single or clustered).
+            None → fall back to legacy Config.KAFKA_BROKER (from .env).
+        kafka_env: Environment value (e.g. "prod"). Used for the Kafka topic.
+            None → fall back to legacy Config.KAFKA_ENV.
+        kafka_clustered: Whether the broker list is a Kafka cluster (only used
+            for logging / diagnostics). None → False.
 
     Returns:
         Dict with sync results per table
@@ -421,7 +496,7 @@ def sync_tables_to_secondary(server: str, table_names: List[str]) -> Dict[str, A
             try:
                 # Connect to primary server and call stored procedure to generate script
                 primary_conn_string = (
-                    f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+                    f"DRIVER={{ODBC Driver 17 for SQL Server}};"
                     f"SERVER={primary_config['server']},{db_port};"
                     f"DATABASE={db_name};"
                     f"UID={db_user};"
@@ -433,9 +508,31 @@ def sync_tables_to_secondary(server: str, table_names: List[str]) -> Dict[str, A
                 primary_conn = pyodbc.connect(primary_conn_string)
                 primary_cursor = primary_conn.cursor()
 
-                # Call stored procedure to generate sync script
+                # Detect CLR-type columns BEFORE generating the script.
+                # Tables with CLR columns (e.g. [dbo].[Farms].[GeoPoint] geography)
+                # can't be read via 4-part-name distributed queries — SQL Server
+                # error 7325. The dispatcher handles both paths automatically;
+                # we also use this flag to choose where to fetch missing rows
+                # for Kafka publishing.
                 primary_cursor.execute("""
-                    EXEC dbo.usp_GenerateSyncScript_VR @TableName = ?
+                    SELECT CASE WHEN EXISTS (
+                        SELECT 1
+                        FROM sys.columns c
+                        JOIN sys.types  ty ON c.user_type_id = ty.user_type_id
+                        JOIN sys.tables  t ON c.object_id     = t.object_id
+                        WHERE t.name = ?
+                          AND c.is_computed = 0
+                          AND c.is_hidden   = 0
+                          AND ty.is_assembly_type = 1
+                    ) THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS HasClrColumns
+                """, (table_name,))
+                has_clr = bool(primary_cursor.fetchone()[0])
+                sync_result['has_clr_columns'] = has_clr
+
+                # Call the dispatcher — it routes CLR tables through the
+                # OPENQUERY-based CLR-safe generator automatically.
+                primary_cursor.execute("""
+                    EXEC dbo.usp_GenerateSyncScript_VR_Dispatcher @TableName = ?
                 """, (table_name,))
 
                 script_result = primary_cursor.fetchone()
@@ -449,17 +546,123 @@ def sync_tables_to_secondary(server: str, table_names: List[str]) -> Dict[str, A
                     results['results'].append(sync_result)
                     continue
 
+                # Fetch missing rows from primary for Kafka publishing
+                # (uses linked server to compare against secondary)
+                secondary_server_ip = secondary_config['server']
+                secondary_db_name = secondary_config.get('db', 'NitaraDB')
+                # Hoisted up so the CLR-aware Kafka path can also open a secondary
+                # connection (usp_GetMissingRows_CLR runs on the secondary).
+                secondary_db_user     = secondary_config.get('user')
+                secondary_db_password = secondary_config.get('password')
+                secondary_db_port     = secondary_config.get('port', '1433')
+                missing_rows_count = 0
+
+                try:
+                    from src.kafka_producer import KafkaBacklogProducer
+                    from src.config import Config
+
+                    # Prefer per-environment Kafka config from the active env
+                    # in settings.db; fall back to legacy .env values.
+                    brokers = kafka_brokers if kafka_brokers is not None else Config.KAFKA_BROKER
+                    env_val = kafka_env if kafka_env is not None else Config.KAFKA_ENV
+                    clustered = bool(kafka_clustered) if kafka_clustered is not None else False
+
+                    kafka_producer = KafkaBacklogProducer(brokers, env_val, clustered=clustered)
+
+                    if kafka_producer.active:
+                        columns, rows = [], []
+                        if has_clr:
+                            # CLR tables: the standard GetMissingRows would fail with
+                            # SQL Server error 7325. Run usp_GetMissingRows_CLR on
+                            # the SECONDARY instead (it OPENQUERYs back to primary).
+                            try:
+                                sec_conn_string = (
+                                    f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+                                    f"SERVER={secondary_server_ip},{secondary_db_port};"
+                                    f"DATABASE={secondary_db_name};"
+                                    f"UID={secondary_db_user};"
+                                    f"PWD={secondary_db_password};"
+                                    f"TrustServerCertificate=yes;"
+                                    f"Encrypt=yes;"
+                                )
+                                sec_conn = pyodbc.connect(sec_conn_string)
+                                sec_cur = sec_conn.cursor()
+
+                                # Push the user-managed CLR cast overrides from
+                                # SQLite (settings.db) into the secondary's
+                                # dbo.ClrColumnOverrides table so usp_GetMissingRows_CLR
+                                # can read them.
+                                _push_clr_overrides_to_secondary(sec_cur, table_name)
+
+                                sec_cur.execute("""
+                                    EXEC dbo.usp_GetMissingRows_CLR
+                                        @TableName = ?,
+                                        @PrimaryServerName = ?,
+                                        @PrimaryDatabase = ?
+                                """, (table_name, primary_config['server'], db_name))
+                                if sec_cur.description:
+                                    columns = [desc[0] for desc in sec_cur.description]
+                                    rows = sec_cur.fetchall()
+                                sec_cur.close()
+                                sec_conn.close()
+                            except Exception:
+                                logger.exception(
+                                    "CLR-aware GetMissingRows_CLR failed for '%s'; falling back to standard path",
+                                    table_name,
+                                )
+                                # Fall through to standard path as a safety net
+                                primary_cursor.execute("""
+                                    EXEC dbo.usp_GetMissingRows
+                                        @TableName = ?,
+                                        @SecondaryServerIP = ?,
+                                        @SecondaryDatabase = ?
+                                """, (table_name, secondary_server_ip, secondary_db_name))
+                                if primary_cursor.description:
+                                    columns = [desc[0] for desc in primary_cursor.description]
+                                    rows = primary_cursor.fetchall()
+                        else:
+                            primary_cursor.execute("""
+                                EXEC dbo.usp_GetMissingRows
+                                    @TableName = ?,
+                                    @SecondaryServerIP = ?,
+                                    @SecondaryDatabase = ?
+                            """, (table_name, secondary_server_ip, secondary_db_name))
+                            if primary_cursor.description:
+                                columns = [desc[0] for desc in primary_cursor.description]
+                                rows = primary_cursor.fetchall()
+
+                        if columns and rows:
+                            missing_rows_count = kafka_producer.publish_batch(
+                                table_name, columns, rows
+                            )
+                            logger.info(
+                                "Kafka: published %d rows for '%s' → '%s' to topic '%s'%s",
+                                missing_rows_count, table_name, secondary_server_ip,
+                                kafka_producer.topic,
+                                " (CLR path)" if has_clr else "",
+                            )
+                        elif kafka_producer.active:
+                            logger.info(
+                                "Kafka: no missing rows for '%s' → '%s'%s",
+                                table_name, secondary_server_ip,
+                                " (CLR path)" if has_clr else "",
+                            )
+                    else:
+                        logger.info("Kafka: producer not active – skipping publish for '%s'", table_name)
+                except Exception:
+                    logger.exception(
+                        "Kafka publish failed for '%s' → '%s' – continuing with DB sync",
+                        table_name, secondary_server_ip
+                    )
+
                 primary_cursor.close()
                 primary_conn.close()
 
                 # Connect to secondary server and execute the script
-                secondary_db_user = secondary_config.get('user')
-                secondary_db_password = secondary_config.get('password')
-                secondary_db_name = secondary_config.get('db', 'NitaraDB')
-                secondary_db_port = secondary_config.get('port', '1433')
-
+                # (secondary_db_user, secondary_db_password, secondary_db_name,
+                # secondary_db_port were already populated above for the CLR path)
                 secondary_conn_string = (
-                    f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+                    f"DRIVER={{ODBC Driver 17 for SQL Server}};"
                     f"SERVER={secondary_config['server']},{secondary_db_port};"
                     f"DATABASE={secondary_db_name};"
                     f"UID={secondary_db_user};"
@@ -483,6 +686,7 @@ def sync_tables_to_secondary(server: str, table_names: List[str]) -> Dict[str, A
 
                 sync_result['status'] = 'success'
                 sync_result['rows_affected'] = rows_affected
+                sync_result['kafka_published'] = missing_rows_count
 
             except pyodbc.Error as e:
                 sync_result['status'] = 'error'

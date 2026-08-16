@@ -39,8 +39,9 @@ BEGIN
     JOIN sys.tables t ON c.object_id = t.object_id
     WHERE t.name = @TableName
       AND c.is_computed = 0
+      AND c.is_hidden = 0
       AND c.system_type_id <> 189
-      AND c.generated_always_type = 0
+      AND (c.generated_always_type IS NULL OR c.generated_always_type = 0)
     ORDER BY c.column_id;
 
     IF @ColumnList = ''

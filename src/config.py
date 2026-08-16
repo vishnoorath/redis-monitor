@@ -50,6 +50,10 @@ class Config:
     JWT_ORGANIZATION_ID = os.getenv('JWT_ORGANIZATION_ID', '066b564b-7b7c-47d6-bdd8-9d7a0ce83bbe')
     JWT_SESSION_CORRELATION_ID = os.getenv('JWT_SESSION_CORRELATION_ID', 'a1b3d6ed-0a24-438c-bf46-7242fe568ae8')
 
+    # Kafka Configuration (for backlog publishing)
+    KAFKA_BROKER = os.getenv('KAFKA_BROKER', '')
+    KAFKA_ENV = os.getenv('KAFKA_ENV', '')
+
     # Output Configuration
     OUTPUT_DIR = os.getenv('OUTPUT_DIR', 'results')
     VERBOSE = os.getenv('VERBOSE', 'False').lower() == 'true'

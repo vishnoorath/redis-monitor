@@ -1,496 +1,278 @@
 {% extends "base.html" %}
 
-{% block title %}Settings - Redis Monitor{% endblock %}
-
-{% block extra_css %}
-<style>
-    .settings-card {
-        background: white;
-        padding: 2rem;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        margin-bottom: 2rem;
-    }
-
-    .settings-card h2 {
-        color: #667eea;
-        margin-bottom: 1.5rem;
-        padding-bottom: 1rem;
-        border-bottom: 2px solid #667eea;
-    }
-
-    .form-group {
-        margin-bottom: 1.5rem;
-    }
-
-    .form-group label {
-        display: block;
-        font-weight: 600;
-        margin-bottom: 0.5rem;
-        color: #333;
-    }
-
-    .form-group label span {
-        font-weight: normal;
-        color: #666;
-        font-size: 0.85rem;
-    }
-
-    input[type="number"],
-    input[type="email"],
-    input[type="text"],
-    input[type="password"],
-    textarea {
-        width: 100%;
-        padding: 0.75rem;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        font-size: 0.95rem;
-        box-sizing: border-box;
-    }
-
-    input[type="number"]:focus,
-    input[type="email"]:focus,
-    input[type="text"]:focus,
-    input[type="password"]:focus,
-    textarea:focus {
-        outline: none;
-        border-color: #667eea;
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-    }
-
-    textarea {
-        resize: vertical;
-        min-height: 100px;
-        font-family: inherit;
-    }
-
-    .help-text {
-        font-size: 0.8rem;
-        color: #666;
-        margin-top: 0.25rem;
-    }
-
-    .button-group {
-        display: flex;
-        gap: 1rem;
-        margin-top: 1.5rem;
-    }
-
-    button {
-        background-color: #667eea;
-        color: white;
-        padding: 0.75rem 1.5rem;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 1rem;
-        font-weight: bold;
-        transition: background-color 0.3s;
-    }
-
-    button:hover {
-        background-color: #764ba2;
-    }
-
-    .button-secondary {
-        background-color: #999;
-    }
-
-    .button-secondary:hover {
-        background-color: #777;
-    }
-
-    .button-danger {
-        background-color: #dc3545;
-    }
-
-    .button-danger:hover {
-        background-color: #c82333;
-    }
-
-    .button-small {
-        padding: 0.4rem 0.8rem;
-        font-size: 0.85rem;
-    }
-
-    .success-message {
-        background-color: #E8F5E9;
-        border-left: 4px solid #4CAF50;
-        padding: 1rem;
-        border-radius: 4px;
-        margin-bottom: 1rem;
-        color: #2E7D32;
-    }
-
-    .refresh-options {
-        display: flex;
-        gap: 0.5rem;
-        flex-wrap: wrap;
-        margin-top: 0.5rem;
-    }
-
-    .refresh-option {
-        padding: 0.5rem 1rem;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        background: white;
-        cursor: pointer;
-        transition: all 0.2s;
-        font-size: 0.9rem;
-    }
-
-    .refresh-option:hover {
-        border-color: #667eea;
-        color: #667eea;
-    }
-
-    .refresh-option.selected {
-        background-color: #667eea;
-        color: white;
-        border-color: #667eea;
-    }
-
-    /* Server Configuration Styles */
-    .server-list {
-        margin-top: 1rem;
-    }
-
-    .server-item {
-        background: #f8f9fa;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        padding: 1rem;
-        margin-bottom: 1rem;
-        position: relative;
-    }
-
-    .server-item.primary {
-        border-color: #4CAF50;
-        background: #E8F5E9;
-    }
-
-    .server-item-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 0.75rem;
-    }
-
-    .server-item-title {
-        font-weight: 600;
-        color: #333;
-    }
-
-    .server-item-actions {
-        display: flex;
-        gap: 0.5rem;
-    }
-
-    .server-fields {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 1rem;
-    }
-
-    .server-field {
-        display: flex;
-        flex-direction: column;
-    }
-
-    .server-field.full-width {
-        grid-column: 1 / -1;
-    }
-
-    .server-field label {
-        font-size: 0.85rem;
-        font-weight: 500;
-        margin-bottom: 0.25rem;
-        color: #555;
-    }
-
-    .server-field input {
-        padding: 0.5rem;
-        font-size: 0.9rem;
-    }
-
-    .checkbox-field {
-        flex-direction: row;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .checkbox-field input {
-        width: auto;
-    }
-
-    .checkbox-field label {
-        margin-bottom: 0;
-    }
-
-    .add-server-form {
-        background: #f8f9fa;
-        border: 2px dashed #ddd;
-        border-radius: 4px;
-        padding: 1.5rem;
-        margin-top: 1rem;
-    }
-
-    .add-server-form h3 {
-        margin-top: 0;
-        margin-bottom: 1rem;
-        color: #667eea;
-    }
-
-    .hidden {
-        display: none;
-    }
-</style>
-{% endblock %}
+{% block title %}Settings — Nitara BAM{% endblock %}
 
 {% block content %}
-<div class="settings-card">
-    <h2>Settings</h2>
-
-    {% if success %}
-    <div class="success-message">
-        Settings saved successfully!
+<div class="page-header">
+    <div>
+        <div class="panel-eyebrow">Configuration</div>
+        <h1 class="page-title">Settings</h1>
+        <div class="page-subtitle">
+            Active env: <strong>{{ active_environment.display_name }}</strong>. Switch environment on the startup screen.
+        </div>
     </div>
-    {% endif %}
-
-    <form method="POST" action="/settings" onsubmit="console.log('Form onsubmit triggered'); return prepareFormSubmit()">
-        <div class="form-group">
-            <label for="refresh_frequency">
-                Refresh Frequency
-                <span>(How often to poll data automatically)</span>
-            </label>
-            <input type="number"
-                   id="refresh_frequency"
-                   name="refresh_frequency"
-                   value="{{ settings.refresh_frequency | default(30) }}"
-                   min="10"
-                   max="300"
-                   step="5"
-                   required>
-            <div class="help-text">Enter value in seconds (minimum 10, maximum 300)</div>
-            <div class="refresh-options">
-                <button type="button" class="refresh-option" onclick="setRefresh(10)">10 sec</button>
-                <button type="button" class="refresh-option" onclick="setRefresh(30)">30 sec</button>
-                <button type="button" class="refresh-option" onclick="setRefresh(60)">1 min</button>
-                <button type="button" class="refresh-option" onclick="setRefresh(120)">2 min</button>
-                <button type="button" class="refresh-option" onclick="setRefresh(300)">5 min</button>
-            </div>
-        </div>
-
-        <div class="form-group">
-            <label for="notified_emails">
-                Notified Emails
-                <span>(Email addresses to receive alerts, one per line)</span>
-            </label>
-            <textarea
-                id="notified_emails"
-                name="notified_emails"
-                placeholder="admin@example.com&#10;support@example.com">{{ settings.notified_emails | default('') }}</textarea>
-            <div class="help-text">Enter one email address per line</div>
-        </div>
-
-        <div class="form-group">
-            <label for="ignore_tables">
-                Ignore Tables for Monitoring
-                <span>(Tables to exclude from SQL replication difference monitoring)</span>
-            </label>
-            <textarea
-                id="ignore_tables"
-                name="ignore_tables"
-                placeholder="tbl_Msg91SmSFailureCallbackLog&#10;tbl_MessageLangVariant">{{ settings.ignore_tables | default('') }}</textarea>
-            <div class="help-text">Enter one table name per line</div>
-        </div>
-
-        <div class="form-group">
-            <label>
-                Database Servers to Monitor
-                <span>(Configure database servers for monitoring)</span>
-            </label>
-
-            <div class="server-list" id="serverList">
-                <!-- Server items will be rendered here -->
-            </div>
-
-            <button type="button" class="button-secondary" onclick="showAddServerForm()" style="margin-top: 1rem;">
-                + Add Server
-            </button>
-
-            <div class="add-server-form hidden" id="addServerForm">
-                <h3>Add New Server</h3>
-                <div class="server-fields">
-                    <div class="server-field">
-                        <label for="newServer">Server IP/Hostname</label>
-                        <input type="text" id="newServer" placeholder="10.10.98.47">
-                    </div>
-                    <div class="server-field">
-                        <label for="newDb">Database Name</label>
-                        <input type="text" id="newDb" placeholder="NitaraDB">
-                    </div>
-                    <div class="server-field">
-                        <label for="newUser">Username</label>
-                        <input type="text" id="newUser" placeholder="sa">
-                    </div>
-                    <div class="server-field">
-                        <label for="newPassword">Password</label>
-                        <input type="password" id="newPassword" placeholder="Enter password">
-                    </div>
-                    <div class="server-field checkbox-field">
-                        <input type="checkbox" id="newIsPrimary">
-                        <label for="newIsPrimary">Primary Server</label>
-                    </div>
-                </div>
-                <div class="button-group">
-                    <button type="button" onclick="addServer()">Add Server</button>
-                    <button type="button" class="button-secondary" onclick="hideAddServerForm()">Cancel</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Hidden input to store servers JSON -->
-        <input type="hidden" id="serversJson" name="servers" value="">
-
-        <div class="button-group">
-            <button type="submit">Save Settings</button>
-            <button type="reset" class="button-secondary">Reset</button>
-        </div>
-    </form>
+    <div>
+        <a href="/select-environment" class="btn btn-secondary">Switch environment →</a>
+    </div>
 </div>
+
+{% if saved %}
+<div class="banner">
+    Settings saved for environment <strong>{{ active_environment.display_name }}</strong>.
+</div>
+{% endif %}
+
+<form method="POST" action="/settings">
+
+    <!-- Kafka section -->
+    <div class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="panel-eyebrow">Kafka · {{ active_environment.value }}_sync_changes_backlog</div>
+                <div class="panel-title">Kafka brokers for {{ active_environment.display_name }}</div>
+            </div>
+            <div>
+                {% if active_environment.kafka_clustered %}
+                <span class="badge" style="font-family:var(--font-mono);">clustered (3-node)</span>
+                {% else %}
+                <span class="badge" style="font-family:var(--font-mono);">single</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="form-row">
+            <label class="form-label" for="kafka_brokers">
+                Bootstrap servers
+            </label>
+            <input
+                type="text"
+                id="kafka_brokers"
+                name="kafka_brokers"
+                class="input mono"
+                value="{{ active_environment.kafka_brokers or '' }}"
+                placeholder="10.10.98.39:9092                       (single)
+10.10.98.36:9092,10.10.98.37:9092,10.10.98.38:9092   (clustered)"
+            />
+            <div class="form-hint">
+                Comma-separated host:port pairs. The producer connects to all of them —
+                the client handles both single and clustered topologies automatically.
+            </div>
+        </div>
+
+        <div class="form-row">
+            <label class="form-label" style="display:flex; align-items:center; gap:8px;">
+                <input type="checkbox" name="kafka_clustered" value="true" {% if active_environment.kafka_clustered %}checked{% endif %}>
+                Brokers form a Kafka cluster (recommended for {{ 'Prod' if active_environment.display_name == 'Prod' else 'this env — leave off for single broker' }})
+            </label>
+        </div>
+    </div>
+
+    <!-- Per-env app settings -->
+    <div class="panel">
+        <div class="panel-head">
+            <div class="panel-title">Application settings for {{ active_environment.display_name }}</div>
+        </div>
+
+        <div class="form-grid-2">
+            <div class="form-row">
+                <label class="form-label" for="refresh_frequency">Refresh frequency (seconds)</label>
+                <input type="number" id="refresh_frequency" name="refresh_frequency"
+                       class="input" min="10" max="300" step="5"
+                       value="{{ active_environment.settings.refresh_frequency | default(30) }}" />
+            </div>
+            <div class="form-row">
+                <label class="form-label" for="notified_emails">Notified emails (one per line)</label>
+                <textarea id="notified_emails" name="notified_emails" class="textarea"
+                          placeholder="admin@example.com&#10;support@example.com">{{ active_environment.settings.notified_emails | default('', true) }}</textarea>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <label class="form-label" for="ignore_tables">Ignore tables (one per line)</label>
+            <textarea id="ignore_tables" name="ignore_tables" class="textarea"
+                      placeholder="tbl_Msg91SmSFailureCallbackLog&#10;tbl_MessageLangVariant">{{ active_environment.settings.ignore_tables | default('', true) }}</textarea>
+            <div class="form-hint">Tables to exclude from SQL replication difference monitoring.</div>
+        </div>
+    </div>
+
+    <!-- Servers -->
+    <div class="panel">
+        <div class="panel-head">
+            <div class="panel-title">Database servers</div>
+            <button type="button" class="btn btn-secondary" onclick="showAddServerForm()">+ Add server</button>
+        </div>
+
+        <div id="serverList"></div>
+
+        <div id="addServerForm" class="panel" style="margin-top:12px; display:none; border-style:dashed;">
+            <div class="panel-head"><div class="panel-title">Add new server</div></div>
+            <div class="form-grid-2">
+                <div class="form-row">
+                    <label class="form-label" for="newServer">Server IP / hostname</label>
+                    <input type="text" id="newServer" class="input mono" placeholder="10.10.98.66" />
+                </div>
+                <div class="form-row">
+                    <label class="form-label" for="newDb">Database</label>
+                    <input type="text" id="newDb" class="input" placeholder="NitaraDB" />
+                </div>
+                <div class="form-row">
+                    <label class="form-label" for="newUser">Username</label>
+                    <input type="text" id="newUser" class="input" placeholder="sa" />
+                </div>
+                <div class="form-row">
+                    <label class="form-label" for="newPassword">Password</label>
+                    <input type="password" id="newPassword" class="input mono" />
+                </div>
+                <div class="form-row" style="grid-column:1 / -1;">
+                    <label style="display:flex; align-items:center; gap:8px;">
+                        <input type="checkbox" id="newIsPrimary"> Primary server
+                    </label>
+                </div>
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button type="button" class="btn btn-primary" onclick="addServer()">Add</button>
+                <button type="button" class="btn btn-secondary" onclick="hideAddServerForm()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <input type="hidden" id="serversJson" name="servers" value="">
+
+    <!-- CLR column overrides -->
+    <div class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="panel-eyebrow">Sync · CLR handling</div>
+                <div class="panel-title">CLR column overrides</div>
+            </div>
+        </div>
+
+        <div class="form-hint" style="margin-bottom:12px;">
+            Tables with CLR-type columns (e.g. <code>geography</code>) can't be read via 4-part-name
+            distributed queries. The sync pipeline falls back to a CLR-safe path that OPENQUERYs the
+            primary through the secondary. Use this map to tell the secondary how to CAST each CLR
+            column when streaming missing rows back. The default is <code>NVARCHAR(MAX)</code>.
+        </div>
+
+        {% if clr_overrides %}
+        <table class="data-table" style="margin-bottom:12px;">
+            <thead><tr>
+                <th>Table</th>
+                <th>Column</th>
+                <th>CAST AS</th>
+                <th>Notes</th>
+                <th style="width:80px;"></th>
+            </tr></thead>
+            <tbody>
+            {% for o in clr_overrides %}
+                <tr>
+                    <td><code>{{ o.table_name }}</code></td>
+                    <td><code>{{ o.column_name }}</code></td>
+                    <td><code style="font-family:var(--font-mono);">{{ o.cast_as }}</code></td>
+                    <td style="font-family:var(--font-mono); font-size:12px;">{{ o.notes }}</td>
+                    <td>
+                        <form method="POST" action="/settings/clr/delete" style="display:inline;">
+                            <input type="hidden" name="table_name" value="{{ o.table_name }}">
+                            <input type="hidden" name="column_name" value="{{ o.column_name }}">
+                            <button type="submit" class="btn btn-secondary" style="padding:4px 8px; font-size:12px;">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="form-hint" style="margin-bottom:12px;">No overrides configured.</div>
+        {% endif %}
+
+        <details>
+            <summary style="cursor:pointer; color:var(--primary); font-family:var(--font-mono); font-size:12px; letter-spacing:0.05em;">+ ADD OVERRIDE</summary>
+            <form method="POST" action="/settings/clr/add" style="margin-top:12px;">
+                <div class="form-grid-2">
+                    <div class="form-row">
+                        <label class="form-label" for="clr_table">Table name</label>
+                        <input type="text" id="clr_table" name="table_name" class="input mono" placeholder="Farms" required />
+                    </div>
+                    <div class="form-row">
+                        <label class="form-label" for="clr_column">Column name</label>
+                        <input type="text" id="clr_column" name="column_name" class="input mono" placeholder="GeoPoint" required />
+                    </div>
+                    <div class="form-row">
+                        <label class="form-label" for="clr_cast">CAST AS</label>
+                        <input type="text" id="clr_cast" name="cast_as" class="input mono"
+                               value="NVARCHAR(MAX)" placeholder="NVARCHAR(MAX)" required />
+                        <div class="form-hint">SQL Server target type (e.g. NVARCHAR(MAX), VARCHAR(8000)).</div>
+                    </div>
+                    <div class="form-row">
+                        <label class="form-label" for="clr_notes">Notes (optional)</label>
+                        <input type="text" id="clr_notes" name="notes" class="input"
+                               placeholder="[dbo].[Farms].[GeoPoint] is geography (CLR)" />
+                    </div>
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <button type="submit" class="btn btn-primary">Add / Update</button>
+                </div>
+            </form>
+        </details>
+    </div>
+
+    <div style="display:flex; gap:8px; margin-top:24px;">
+        <button type="submit" class="btn btn-primary">Save settings</button>
+        <button type="reset" class="btn btn-secondary">Reset</button>
+    </div>
+</form>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-    // Server data from server-side
-    const servers = {{ settings.servers | tojson }};
-
-    function setRefresh(value) {
-        document.getElementById('refresh_frequency').value = value;
-
-        // Update selected state
-        document.querySelectorAll('.refresh-option').forEach(btn => {
-            btn.classList.remove('selected');
-            if (parseInt(btn.textContent) === value ||
-                (value === 60 && btn.textContent === '1 min') ||
-                (value === 120 && btn.textContent === '2 min') ||
-                (value === 300 && btn.textContent === '5 min')) {
-                btn.classList.add('selected');
-            }
-        });
-    }
-
-    // Set initial selected state
-    document.addEventListener('DOMContentLoaded', function() {
-        const currentValue = parseInt(document.getElementById('refresh_frequency').value);
-        setRefresh(currentValue);
-        renderServers();
-    });
+    const servers = {{ active_environment.settings.servers | default([], true) | tojson }};
+    const serverList = document.getElementById('serverList');
+    const serversJsonInput = document.getElementById('serversJson');
 
     function renderServers() {
-        console.log('renderServers called - servers array:', servers);
-        const serverList = document.getElementById('serverList');
-        const serversJsonInput = document.getElementById('serversJson');
-
-        // Update hidden input with current servers
         serversJsonInput.value = JSON.stringify(servers);
-        console.log('renderServers - hidden input set to:', serversJsonInput.value);
-
-        if (servers.length === 0) {
-            serverList.innerHTML = '<p class="help-text">No servers configured. Click "Add Server" to add one.</p>';
+        if (!servers.length) {
+            serverList.innerHTML = '<div class="form-hint">No servers configured. Click "+ Add server" to add one.</div>';
             return;
         }
-
-        serverList.innerHTML = servers.map((server, index) => `
-            <div class="server-item ${server.isPrimary ? 'primary' : ''}">
-                <div class="server-item-header">
-                    <span class="server-item-title">${server.server}${server.isPrimary ? ' (Primary)' : ''}</span>
-                    <div class="server-item-actions">
-                        <button type="button" class="button-small button-danger" onclick="removeServer(${index})">Remove</button>
+        serverList.innerHTML = servers.map((s, i) => `
+            <div class="panel" style="margin-bottom:8px; padding:12px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <div>
+                        <div style="font-weight:600;">${s.server}${s.isPrimary ? ' (Primary)' : ''}</div>
+                        <div class="form-hint">${s.db} · ${s.user} · ${s.password ? '••••••' : 'no password'}</div>
                     </div>
-                </div>
-                <div class="server-fields">
-                    <div class="server-field">
-                        <label>Server</label>
-                        <span>${server.server}</span>
-                    </div>
-                    <div class="server-field">
-                        <label>Database</label>
-                        <span>${server.db}</span>
-                    </div>
-                    <div class="server-field">
-                        <label>Username</label>
-                        <span>${server.user}</span>
-                    </div>
-                    <div class="server-field">
-                        <label>Password</label>
-                        <span>${'*'.repeat(server.password ? server.password.length : 0)}</span>
-                    </div>
+                    <button type="button" class="btn btn-secondary" onclick="removeServer(${i})">Remove</button>
                 </div>
             </div>
         `).join('');
     }
 
     function showAddServerForm() {
-        document.getElementById('addServerForm').classList.remove('hidden');
+        document.getElementById('addServerForm').style.display = 'block';
     }
-
     function hideAddServerForm() {
-        document.getElementById('addServerForm').classList.add('hidden');
-        // Clear form fields
-        document.getElementById('newServer').value = '';
-        document.getElementById('newDb').value = '';
-        document.getElementById('newUser').value = '';
-        document.getElementById('newPassword').value = '';
+        document.getElementById('addServerForm').style.display = 'none';
+        ['newServer','newDb','newUser','newPassword'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('newIsPrimary').checked = false;
     }
-
     function addServer() {
         const server = document.getElementById('newServer').value.trim();
-        const db = document.getElementById('newDb').value.trim();
-        const user = document.getElementById('newUser').value.trim();
-        const password = document.getElementById('newPassword').value;
-        const isPrimary = document.getElementById('newIsPrimary').checked;
-
-        if (!server || !db || !user) {
-            alert('Please fill in server, database, and username');
-            return;
-        }
-
-        // If this is marked as primary, unmark other primaries
-        if (isPrimary) {
-            servers.forEach(s => s.isPrimary = false);
-        }
-
-        servers.push({
-            server: server,
-            db: db,
-            user: user,
-            password: password,
-            isPrimary: isPrimary
-        });
-
+        const db     = document.getElementById('newDb').value.trim();
+        const user   = document.getElementById('newUser').value.trim();
+        const pw     = document.getElementById('newPassword').value;
+        const isP    = document.getElementById('newIsPrimary').checked;
+        if (!server || !db || !user) { alert('Server, database, and username are required.'); return; }
+        if (isP) servers.forEach(s => s.isPrimary = false);
+        servers.push({ server, db, user, password: pw, isPrimary: isP });
         hideAddServerForm();
         renderServers();
     }
-
-    function removeServer(index) {
-        if (confirm('Are you sure you want to remove this server?')) {
-            servers.splice(index, 1);
-            renderServers();
-        }
+    function removeServer(i) {
+        if (!confirm('Remove this server?')) return;
+        servers.splice(i, 1);
+        renderServers();
     }
-
-    function prepareFormSubmit() {
-        // Ensure the hidden input has the current servers value before submit
-        const serversValue = JSON.stringify(servers);
-        console.log('prepareFormSubmit - servers:', servers);
-        console.log('prepareFormSubmit - serversJson value:', serversValue);
-        document.getElementById('serversJson').value = serversValue;
-        console.log('prepareFormSubmit - hidden input value:', document.getElementById('serversJson').value);
-        return true;
-    }
+    document.addEventListener('DOMContentLoaded', renderServers);
 </script>
 {% endblock %}

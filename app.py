@@ -3,7 +3,7 @@ Flask Application for Redis Monitor.
 Provides REST API endpoints and a web UI for farm metadata comparison monitoring.
 """
 
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, redirect, url_for
 from datetime import datetime
 import sys
 from pathlib import Path
@@ -19,7 +19,7 @@ from src.comparison import compare_responses
 from src.reporter import Reporter
 from src.html_reporter import HTMLReporter
 from src.sql import get_recent_farm_ids
-from src.replication_monitor import get_replication_status
+from src.replication_monitor import get_replication_status, ReplicationMonitor
 from src import settings_db
 
 
@@ -46,15 +46,93 @@ Config.ensure_output_dir()
 # Initialize settings database
 settings_db.init_settings_db()
 
-# Migrate existing settings from environment variables if needed
-import os
-if not settings_db.get_setting('REFRESH_FREQUENCY'):
-    refresh_freq = os.environ.get('REFRESH_FREQUENCY', '30')
-    settings_db.set_setting('REFRESH_FREQUENCY', refresh_freq, 'INT')
 
-if not settings_db.get_setting('NOTIFIED_EMAILS'):
-    notified_emails = os.environ.get('NOTIFIED_EMAILS', '')
-    settings_db.set_setting('NOTIFIED_EMAILS', notified_emails, 'STRING')
+def _migrate_dotenv_into_db() -> None:
+    """
+    Seed each environment's Kafka brokers from the legacy .env KAFKA_BROKER,
+    if and only if that env's brokers field is still empty. Idempotent —
+    once a user has saved brokers via the settings page, this won't overwrite.
+
+    For envs that the .env explicitly names (KAFKA_ENV), the brokers go only
+    to that env. Other envs stay empty until the user fills them in via the
+    Settings page.
+    """
+    legacy_brokers = (os.getenv('KAFKA_BROKER') or '').strip()
+    legacy_env     = (os.getenv('KAFKA_ENV') or '').strip().lower()
+
+    if not legacy_brokers:
+        return
+
+    # If the .env specifies a particular env, only seed that one.
+    target_values = {legacy_env} if legacy_env else set()
+    # Otherwise seed ALL envs whose brokers are empty so the user has
+    # something to start from. They'll override per-env as needed.
+    for env in settings_db.list_environments():
+        if target_values and env['value'] not in target_values:
+            continue
+        if env['kafka_brokers']:
+            continue  # user already configured
+        settings_db.update_environment(
+            env['value'],
+            kafka_brokers=legacy_brokers,
+            kafka_clustered=env['kafka_clustered'],
+            settings=env.get('settings') or {},
+        )
+
+# Bring in `os` for the dotenv migration above
+import os
+_migrate_dotenv_into_db()
+
+
+# ---------------------------------------------------------------------------
+# Per-request ENV context
+# ---------------------------------------------------------------------------
+
+def _resolve_active_environment():
+    """
+    Return the active environment, falling back to:
+      1. Query parameter (?env=prod)        — temporary override, useful for testing
+      2. ACTIVE_ENVIRONMENT setting in DB   — set by the startup selector
+      3. The first environment in the table (Dev) — first boot, no selection yet
+    """
+    override = request.args.get('env') if request else None
+    if override:
+        env = settings_db.get_environment(override)
+        if env:
+            return env
+    active = settings_db.get_active_environment()
+    if active:
+        return active
+    envs = settings_db.list_environments()
+    return envs[0] if envs else None
+
+
+@app.context_processor
+def inject_environment():
+    """Make `active_environment` available to every Jinja template."""
+    return {'active_environment': _resolve_active_environment()}
+
+
+# ---------------------------------------------------------------------------
+# Startup ENV gate — must run before any UI route
+# ---------------------------------------------------------------------------
+
+@app.before_request
+def require_environment():
+    """
+    Force the user to pick an environment on first hit. The startup selector
+    writes ACTIVE_ENVIRONMENT to settings.db; subsequent requests bypass this.
+    """
+    # Skip for static + the selector itself + APIs (APIs have explicit ?env=)
+    if request.path in ('/select-environment', '/health'):
+        return None
+    if request.path.startswith('/static') or request.path.startswith('/apidocs'):
+        return None
+    if request.path.startswith('/api/'):
+        return None
+    if settings_db.get_active_environment():
+        return None
+    return redirect(url_for('select_environment'))
 
 
 def monitor_single_farm(farm_id):
@@ -135,315 +213,38 @@ def health_check():
 
 @app.route('/monitor', methods=['GET'])
 def momitor_from_db():
-    """
-    Monitor recently updated farms from SQL Server database.
-    Fetches farm IDs from SQL Server and compares them against APIs.
-    ---
-    tags:
-      - Monitoring
-    responses:
-      200:
-        description: Comparison results for recently updated farms
-      500:
-        description: Error processing request
-    """
-    try:
-        # Get recently updated farm IDs from SQL Server
-        farm_ids = get_recent_farm_ids()
-
-        if not farm_ids:
-            return jsonify({
-                'status': 'success',
-                'message': 'No recently updated farms found',
-                'farm_ids': [],
-                'results': []
-            }), 200
-
-        # Monitor each farm
-        results = []
-        test_run_id = datetime.now().strftime('%Y%m%d_%H%M%S')
-
-        for farm_id in farm_ids:
-            result = monitor_single_farm(farm_id)
-            results.append(result)
-
-        # Calculate statistics and collect farm IDs
-        total = len(results)
-
-        identical_farms = []
-        different_farms = []
-        errors_farms = []
-        diff_count = 0
-
-        for r in results:
-            farm_id = r.get('farm_id')
-            if r.get('status') == 'error':
-                errors_farms.append(farm_id)
-            elif r.get('status') == 'success' and r['comparison'].get('identical', False):
-                identical_farms.append(farm_id)
-            elif r.get('status') == 'success' and r['comparison'].get('has_differences', False):
-                different_farms.append(farm_id)
-                # Count actual differences from summary
-                diff_summary = r.get('comparison', {}).get('summary', {})
-                diff_count += diff_summary.get('values_changed', 0) + diff_summary.get('items_added', 0) + diff_summary.get('items_removed', 0)
-
-        identical = len(identical_farms)
-        different = len(different_farms)
-        errors = len(errors_farms)
-
-        # Grafana-friendly format
-        rows = [
-            {'status': 'Identical', 'count': identical, 'farmIds' : identical_farms},
-            {
-                'status': 'Different',
-                'count': different,
-                'farmIds': different_farms,
-                'differences': diff_count
-            },
-            {
-                'status': 'Error',
-                'count': errors,
-                'farmIds': errors_farms
-            }
-        ]
-
-        # Return JSON response
-        return jsonify({
-            'status': 'success',
-            'test_run_id': test_run_id,
-            'timestamp': datetime.now().isoformat(),
-            'total': total,
-            'rows': rows
-        }), 200
-
-    except Exception as e:
-        import traceback
-        error_trace = traceback.format_exc()
-        print(f"\n!!! MOMITOR ERROR !!!")
-        print(error_trace)
-        print("!!! END ERROR !!!\n")
-        return jsonify({
-            'status': 'error',
-            'error': str(e)
-        }), 500
+    """Redis-only monitor endpoint — removed."""
+    return jsonify({
+        'status': 'error',
+        'message': 'Redis monitoring endpoints have been removed. Use SQL Replication instead.',
+    }), 410
 
 
 @app.route('/api/compare', methods=['POST'])
 def compare_farms():
-    """
-    Compare farm metadata between old and new APIs
-    ---
-    tags:
-      - Comparison
-    parameters:
-      - in: body
-        name: body
-        required: true
-        schema:
-          type: object
-          required:
-            - farmIds
-          properties:
-            farmIds:
-              type: array
-              items:
-                type: string
-              example: ["farm-id-1", "farm-id-2"]
-              description: Array of farm IDs to compare
-    responses:
-      200:
-        description: Comparison completed successfully
-        schema:
-          type: object
-          properties:
-            status:
-              type: string
-              example: success
-            summary:
-              type: object
-              properties:
-                total:
-                  type: integer
-                  example: 2
-                identical:
-                  type: integer
-                  example: 1
-                different:
-                  type: integer
-                  example: 1
-                errors:
-                  type: integer
-                  example: 0
-            results:
-              type: array
-              items:
-                type: object
-            timestamp:
-              type: string
-              format: date-time
-      400:
-        description: Invalid request (missing or invalid farmIds)
-      500:
-        description: Server error
-    """
-    try:
-        # Get request data
-        data = request.get_json()
-
-        if not data or 'farmIds' not in data:
-            return jsonify({
-                'status': 'error',
-                'message': 'Missing required field: farmIds',
-                'example': {
-                    'farmIds': ['farm-id-1', 'farm-id-2']
-                }
-            }), 400
-
-        farm_ids = data.get('farmIds', [])
-
-        if not isinstance(farm_ids, list) or len(farm_ids) == 0:
-            return jsonify({
-                'status': 'error',
-                'message': 'farmIds must be a non-empty array'
-            }), 400
-
-        # Monitor each farm
-        results = []
-        for farm_id in farm_ids:
-            result = monitor_single_farm(farm_id)
-            results.append(result)
-
-        # Calculate statistics
-        total = len(results)
-        identical = sum(1 for r in results if r.get('status') == 'success' and r['comparison'].get('identical', False))
-        different = sum(1 for r in results if r.get('status') == 'success' and r['comparison'].get('has_differences', False))
-        errors = sum(1 for r in results if r.get('status') == 'error')
-
-        response = {
-            'status': 'success',
-            'summary': {
-                'total': total,
-                'identical': identical,
-                'different': different,
-                'errors': errors
-            },
-            'results': results,
-            'timestamp': datetime.now().isoformat()
-        }
-
-        return jsonify(response), 200
-
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': f'Server error: {str(e)}'
-        }), 500
+    """Redis-only comparison endpoint — removed."""
+    return jsonify({
+        'status': 'error',
+        'message': 'Redis comparison endpoints have been removed.',
+    }), 410
 
 
 @app.route('/api/monitor/<farm_id>', methods=['GET'])
 def monitor_farm_get(farm_id):
-    """
-    Monitor a single farm (GET endpoint)
-    ---
-    tags:
-      - Monitoring
-    parameters:
-      - in: path
-        name: farm_id
-        type: string
-        required: true
-        description: The farm ID to monitor
-        example: farm-id-1
-    responses:
-      200:
-        description: Farm comparison completed successfully
-        schema:
-          type: object
-          properties:
-            farm_id:
-              type: string
-            status:
-              type: string
-              enum: [success, error]
-            comparison:
-              type: object
-            timestamp:
-              type: string
-              format: date-time
-      500:
-        description: Error monitoring farm
-    """
-    result = monitor_single_farm(farm_id)
-
-    if result['status'] == 'error':
-        return jsonify(result), 500
-    else:
-        return jsonify(result), 200
+    """Redis-only monitor endpoint — removed."""
+    return jsonify({
+        'status': 'error',
+        'message': 'Redis monitoring endpoints have been removed.',
+    }), 410
 
 
 @app.route('/api/monitor', methods=['POST'])
 def monitor_farm_post():
-    """
-    Monitor a single farm (POST endpoint)
-    ---
-    tags:
-      - Monitoring
-    parameters:
-      - in: body
-        name: body
-        required: true
-        schema:
-          type: object
-          required:
-            - farmId
-          properties:
-            farmId:
-              type: string
-              example: farm-id-1
-              description: The farm ID to monitor
-    responses:
-      200:
-        description: Farm comparison completed successfully
-        schema:
-          type: object
-          properties:
-            farm_id:
-              type: string
-            status:
-              type: string
-              enum: [success, error]
-            comparison:
-              type: object
-            timestamp:
-              type: string
-              format: date-time
-      400:
-        description: Missing required field farmId
-      500:
-        description: Error monitoring farm
-    """
-    try:
-        data = request.get_json()
-
-        if not data or 'farmId' not in data:
-            return jsonify({
-                'status': 'error',
-                'message': 'Missing required field: farmId'
-            }), 400
-
-        farm_id = data.get('farmId')
-        result = monitor_single_farm(farm_id)
-
-        if result['status'] == 'error':
-            return jsonify(result), 500
-        else:
-            return jsonify(result), 200
-
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': f'Server error: {str(e)}'
-        }), 500
+    """Redis-only monitor endpoint — removed."""
+    return jsonify({
+        'status': 'error',
+        'message': 'Redis monitoring endpoints have been removed.',
+    }), 410
 
 
 @app.route('/api/config', methods=['GET'])
@@ -750,9 +551,22 @@ def sync_tables():
                 'message': 'Missing or invalid field: tables (must be a non-empty array)'
             }), 400
 
-        # Import and call the sync function
+        # Import and call the sync function.
+        # Kafka brokers/env come from the currently active environment.
         from src.replication_monitor import sync_tables_to_secondary
-        results = sync_tables_to_secondary(server, tables)
+
+        active = _resolve_active_environment()
+        kafka_brokers   = active.get('kafka_brokers') if active else None
+        kafka_env       = active.get('value') if active else None
+        kafka_clustered = active.get('kafka_clustered') if active else None
+
+        results = sync_tables_to_secondary(
+            server,
+            tables,
+            kafka_brokers=kafka_brokers,
+            kafka_env=kafka_env,
+            kafka_clustered=kafka_clustered,
+        )
 
         return jsonify(results), 200
 
@@ -798,161 +612,148 @@ def internal_error(error):
     }), 500
 
 
+@app.route('/select-environment', methods=['GET', 'POST'])
+def select_environment():
+    """
+    On startup, force the user to pick Dev / Test / Uat / Prod.
+    Persists the choice in settings.db → ACTIVE_ENVIRONMENT.
+    """
+    if request.method == 'POST':
+        chosen = (request.form.get('env') or '').strip().lower()
+        env = settings_db.get_environment(chosen)
+        if env:
+            settings_db.set_active_environment(chosen)
+            return redirect(url_for('dashboard'))
+        # Invalid choice — fall through and re-render selector
+
+    environments = settings_db.list_environments()
+    return render_template('env-selector.html', environments=environments)
+
+
 @app.route('/', methods=['GET'])
 def dashboard():
     """Render the web UI dashboard."""
     ignore_tables = settings_db.get_setting_parsed('IGNORE_TABLES_FOR_MONITORING') or []
+    active = _resolve_active_environment()
+    if active and active.get('settings', {}).get('ignore_tables'):
+        ignore_tables = active['settings']['ignore_tables']
     return render_template('index.html', ignore_tables=ignore_tables)
-
-
-@app.route('/redis-status', methods=['GET'])
-def redis_status():
-    """Render the Redis Cache Status page."""
-    return render_template('redis-status.html')
 
 
 @app.route('/sql-status', methods=['GET'])
 def sql_status():
     """Render the SQL Replication Status page."""
     ignore_tables = settings_db.get_setting_parsed('IGNORE_TABLES_FOR_MONITORING') or []
+    active = _resolve_active_environment()
+    if active and active.get('settings', {}).get('ignore_tables'):
+        ignore_tables = active['settings']['ignore_tables']
     return render_template('sql-status.html', ignore_tables=ignore_tables)
+
+
+# ---------------------------------------------------------------------------
+# CLR column override routes (managed in SQLite, pushed to secondary SQL Server)
+# ---------------------------------------------------------------------------
+
+@app.route('/settings/clr/add', methods=['POST'])
+def clr_add():
+    """Add or update a CLR column override in settings.db."""
+    table_name = (request.form.get('table_name') or '').strip()
+    column_name = (request.form.get('column_name') or '').strip()
+    cast_as = (request.form.get('cast_as') or 'NVARCHAR(MAX)').strip()
+    notes = (request.form.get('notes') or '').strip()
+    if not table_name or not column_name:
+        return jsonify({'status': 'error', 'message': 'table_name and column_name are required'}), 400
+    settings_db.upsert_clr_override(table_name, column_name, cast_as, notes)
+    return redirect(url_for('settings'))
+
+
+@app.route('/settings/clr/delete', methods=['POST'])
+def clr_delete():
+    """Remove a CLR column override."""
+    table_name = (request.form.get('table_name') or '').strip()
+    column_name = (request.form.get('column_name') or '').strip()
+    if not table_name or not column_name:
+        return jsonify({'status': 'error', 'message': 'table_name and column_name are required'}), 400
+    settings_db.delete_clr_override(table_name, column_name)
+    return redirect(url_for('settings'))
 
 
 @app.route('/settings', methods=['GET', 'POST'])
 def settings():
     """
-    Render and handle settings page.
-    Allows configuration of refresh frequency, notified emails, and server configurations.
+    Render and handle the per-environment settings page.
+    Reads/writes both the Kafka brokers (per-env) and the app settings
+    (refresh frequency, emails, ignore tables, servers) into the active env's
+    settings_json blob.
     """
-    # Load settings from SQLite or use defaults
-    refresh_frequency = settings_db.get_setting_parsed('REFRESH_FREQUENCY') or 30
-    notified_emails = settings_db.get_setting_parsed('NOTIFIED_EMAILS') or ''
-    servers = settings_db.get_setting_parsed('SERVERS') or []
-    ignore_tables_list = settings_db.get_setting_parsed('IGNORE_TABLES_FOR_MONITORING') or []
-    # Convert list to newline-separated string for display
-    ignore_tables = '\n'.join(ignore_tables_list)
+    active = _resolve_active_environment()
+    if not active:
+        return redirect(url_for('select_environment'))
 
-    settings_data = {
-        'refresh_frequency': refresh_frequency,
-        'notified_emails': notified_emails,
-        'servers': servers,
-        'ignore_tables': ignore_tables
-    }
+    # Load the active env's settings.json (with sensible defaults)
+    cfg = active.get('settings') or {}
+    refresh_frequency = cfg.get('refresh_frequency', 30)
+    notified_emails  = cfg.get('notified_emails', '')
+    servers          = cfg.get('servers', [])
+    ignore_tables    = '\n'.join(cfg.get('ignore_tables', []))
 
+    # On POST, save everything back into the env's settings_json + Kafka config
     if request.method == 'POST':
-        # Get form data
-        print(f"[DEBUG] POST /settings received:")
-        print(f"  refresh_frequency: {request.form.get('refresh_frequency')}")
-        print(f"  notified_emails: {request.form.get('notified_emails')}")
-        print(f"  servers: {request.form.get('servers')}")
-
-        refresh_frequency = request.form.get('refresh_frequency', '30')
-        notified_emails = request.form.get('notified_emails', '')
-        servers_json = request.form.get('servers') or '[]'
-
-        # Update settings in SQLite
-        settings_db.set_setting('REFRESH_FREQUENCY', int(refresh_frequency), 'INT')
-        settings_db.set_setting('NOTIFIED_EMAILS', notified_emails, 'STRING')
-
-        # Parse servers JSON if provided
         import json
-        try:
-            servers_list = json.loads(servers_json) if servers_json else []
-            print(f"[DEBUG] Parsed servers_list: {servers_list}")
-            settings_db.set_setting('SERVERS', servers_list, 'JSON')
-            print(f"[DEBUG] Saved SERVERS to database")
-        except json.JSONDecodeError as e:
-            print(f"Error parsing servers JSON: {e}")
-            pass  # Keep existing servers if invalid JSON
 
-        # Parse ignore tables (newline-separated string to list)
+        new_kafka_brokers = (request.form.get('kafka_brokers') or '').strip()
+        new_kafka_clustered = 'kafka_clustered' in request.form
+
+        refresh_frequency = int(request.form.get('refresh_frequency', '30') or 30)
+        notified_emails   = request.form.get('notified_emails', '')
+
         ignore_tables_input = request.form.get('ignore_tables') or ''
-        ignore_tables_list = [line.strip() for line in ignore_tables_input.split('\n') if line.strip()]
-        settings_db.set_setting('IGNORE_TABLES_FOR_MONITORING', ignore_tables_list, 'JSON')
-        print(f"[DEBUG] Saved IGNORE_TABLES_FOR_MONITORING to database: {ignore_tables_list}")
+        new_ignore_tables = [ln.strip() for ln in ignore_tables_input.split('\n') if ln.strip()]
 
-        # Reload settings
-        settings_data['refresh_frequency'] = int(refresh_frequency)
-        settings_data['notified_emails'] = notified_emails
-        settings_data['servers'] = settings_db.get_setting_parsed('SERVERS') or []
-        saved_ignore_tables = settings_db.get_setting_parsed('IGNORE_TABLES_FOR_MONITORING') or []
-        settings_data['ignore_tables'] = '\n'.join(saved_ignore_tables)
+        servers_json = request.form.get('servers') or '[]'
+        try:
+            new_servers = json.loads(servers_json) if servers_json else []
+        except json.JSONDecodeError:
+            new_servers = servers
 
-        # Render with success message
-        return render_template('settings.html', settings=settings_data, success=True)
-
-    return render_template('settings.html', settings=settings_data)
-
-
-@app.route('/compare', methods=['POST'])
-def compare_web():
-    """
-    Web UI endpoint for comparing farms.
-    Accepts form data and renders report inline.
-    """
-    import traceback
-    try:
-        # Get farm IDs from form
-        farm_ids_input = request.form.get('farm_ids', '').strip()
-        generate_reports = 'generate_reports' in request.form
-
-        if not farm_ids_input:
-            return render_template('index.html', error='Please enter at least one farm ID'), 400
-
-        # Parse farm IDs - support both comma-separated and newline-separated
-        farm_ids = []
-        for line in farm_ids_input.split('\n'):
-            # Handle comma-separated values
-            for item in line.split(','):
-                item = item.strip()
-                if item:
-                    farm_ids.append(item)
-
-        if not farm_ids:
-            return render_template('index.html', error='Please enter valid farm IDs'), 400
-
-        # Monitor each farm
-        results = []
-        test_run_id = datetime.now().strftime('%Y%m%d_%H%M%S')
-
-        for farm_id in farm_ids:
-            result = monitor_single_farm(farm_id)
-            results.append(result)
-
-            # Only keep essential data for template rendering
-            # Remove large response bodies from display if needed
-            result_copy = result.copy()
-            results[-1] = result_copy
-
-        # Calculate statistics
-        total = len(results)
-        identical = sum(1 for r in results if r.get('status') == 'success' and r['comparison'].get('identical', False))
-        different = sum(1 for r in results if r.get('status') == 'success' and r['comparison'].get('has_differences', False))
-        errors = sum(1 for r in results if r.get('status') == 'error')
-
-        summary = {
-            'total': total,
-            'identical': identical,
-            'different': different,
-            'errors': errors
+        new_settings = {
+            'refresh_frequency': refresh_frequency,
+            'notified_emails': notified_emails,
+            'ignore_tables': new_ignore_tables,
+            'servers': new_servers,
         }
 
-        # Render report template (no files written to disk)
-        return render_template(
-            'report.html',
-            summary=summary,
-            results=results,
-            test_run_id=test_run_id,
-            timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            report_paths=None
+        settings_db.update_environment(
+            active['value'],
+            kafka_brokers=new_kafka_brokers,
+            kafka_clustered=new_kafka_clustered,
+            settings=new_settings,
         )
 
-    except Exception as e:
-        error_trace = traceback.format_exc()
-        print(f"\n!!! TEMPLATE ERROR !!!")
-        print(error_trace)
-        print("!!! END ERROR !!!\n")
-        return render_template('index.html', error=f'Error processing request: {str(e)}\n\nTrace:\n{error_trace}'), 500
+        # Re-read for the response template
+        active = settings_db.get_environment(active['value'])
+        cfg = active.get('settings') or {}
+        refresh_frequency = cfg.get('refresh_frequency', 30)
+        notified_emails   = cfg.get('notified_emails', '')
+        servers           = cfg.get('servers', [])
+        ignore_tables     = '\n'.join(cfg.get('ignore_tables', []))
+
+        return render_template(
+            'settings.html',
+            active_environment=active,
+            clr_overrides=settings_db.list_clr_overrides(),
+            saved=True,
+        )
+
+    # CLR column overrides (managed in SQLite, pushed to secondary SQL Server on sync)
+    clr_overrides = settings_db.list_clr_overrides()
+
+    return render_template(
+        'settings.html',
+        active_environment=active,
+        clr_overrides=clr_overrides,
+        saved=False,
+    )
 
 
 if __name__ == '__main__':

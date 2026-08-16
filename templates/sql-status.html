@@ -1,966 +1,281 @@
 {% extends "base.html" %}
 
-{% block title %}SQL Replication Status - Redis Monitor{% endblock %}
-
-{% block extra_css %}
-<style>
-    .card {
-        background: white;
-        padding: 2rem;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        margin-bottom: 2rem;
-    }
-
-    .card h2 {
-        color: #667eea;
-        margin-bottom: 1.5rem;
-        padding-bottom: 1rem;
-        border-bottom: 2px solid #667eea;
-    }
-
-    /* Tab Styles */
-    .tabs-container {
-        margin-bottom: 1.5rem;
-    }
-
-    .tabs {
-        display: flex;
-        gap: 0.5rem;
-        border-bottom: 2px solid #e0e0e0;
-        padding-bottom: 0;
-        flex-wrap: wrap;
-    }
-
-    .tab {
-        padding: 0.75rem 1.5rem;
-        border: none;
-        background: none;
-        cursor: pointer;
-        font-size: 1rem;
-        font-weight: 500;
-        color: #666;
-        border-bottom: 3px solid transparent;
-        margin-bottom: -2px;
-        transition: all 0.2s ease;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .tab:hover {
-        color: #667eea;
-        background-color: #f5f5f5;
-    }
-
-    .tab.active {
-        color: #667eea;
-        border-bottom-color: #667eea;
-        font-weight: 600;
-    }
-
-    .tab .badge {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-width: 24px;
-        height: 24px;
-        padding: 0 0.5rem;
-        border-radius: 12px;
-        font-size: 0.8rem;
-        font-weight: bold;
-    }
-
-    .tab .badge.synced {
-        background-color: #E8F5E9;
-        color: #2E7D32;
-    }
-
-    .tab .badge.out-of-sync {
-        background-color: #FFEBEE;
-        color: #B71C1C;
-    }
-
-    .tab .badge.error {
-        background-color: #FFF3E0;
-        color: #E65100;
-    }
-
-    .tab-content {
-        display: none;
-        padding: 1.5rem 0;
-    }
-
-    .tab-content.active {
-        display: block;
-    }
-
-    /* Summary Stats */
-    .summary-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-        gap: 1rem;
-        margin-bottom: 1.5rem;
-    }
-
-    .summary-stat {
-        background-color: #f5f5f5;
-        padding: 1rem;
-        border-radius: 4px;
-        text-align: center;
-    }
-
-    .summary-stat .label {
-        font-size: 0.85rem;
-        color: #666;
-        margin-bottom: 0.25rem;
-    }
-
-    .summary-stat .value {
-        font-size: 1.5rem;
-        font-weight: bold;
-        color: #333;
-    }
-
-    .summary-stat .value.success { color: #4CAF50; }
-    .summary-stat .value.warning { color: #FF9800; }
-    .summary-stat .value.error { color: #F44336; }
-
-    /* Comparison Table Styles */
-    .comparison-table {
-        width: 100%;
-        border-collapse: collapse;
-        background: white;
-        margin-bottom: 1rem;
-    }
-
-    .comparison-table thead {
-        background-color: #667eea;
-        color: white;
-    }
-
-    .comparison-table th,
-    .comparison-table td {
-        padding: 0.75rem;
-        text-align: left;
-        border-bottom: 1px solid #ddd;
-    }
-
-    .comparison-table tbody tr:hover {
-        background-color: #f9f9f9;
-    }
-
-    .diff-badge {
-        display: inline-block;
-        padding: 0.25rem 0.5rem;
-        border-radius: 3px;
-        font-size: 0.85rem;
-        font-weight: bold;
-    }
-
-    .diff-positive {
-        background-color: #C8E6C9;
-        color: #1B5E20;
-    }
-
-    .diff-negative {
-        background-color: #FFCDD2;
-        color: #B71C1C;
-    }
-
-    /* Server Header */
-    .server-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 1rem;
-        border-radius: 8px 8px 0 0;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .server-header h3 {
-        margin: 0;
-        font-size: 1.2rem;
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-    }
-
-    .server-header .status-badge {
-        padding: 0.25rem 0.75rem;
-        border-radius: 4px;
-        font-size: 0.85rem;
-        font-weight: bold;
-    }
-
-    .server-header .status-badge.synced {
-        background-color: rgba(76, 175, 80, 0.2);
-        color: #A5D6A7;
-    }
-
-    .server-header .status-badge.out-of-sync {
-        background-color: rgba(244, 67, 54, 0.2);
-        color: #FFCDD2;
-    }
-
-    .server-header .status-badge.error {
-        background-color: rgba(255, 152, 0, 0.2);
-        color: #FFE0B2;
-    }
-
-    .server-content {
-        border: 1px solid #ddd;
-        border-top: none;
-        border-radius: 0 0 8px 8px;
-        overflow: hidden;
-    }
-
-    /* Status Cards */
-    .status-card {
-        background: white;
-        padding: 2rem;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        margin-bottom: 1.5rem;
-    }
-
-    .status-indicator {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.5rem 1rem;
-        border-radius: 20px;
-        font-weight: bold;
-    }
-
-    .status-indicator.healthy {
-        background-color: #E8F5E9;
-        color: #2E7D32;
-    }
-
-    .status-dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        display: inline-block;
-    }
-
-    .status-dot.green { background-color: #4CAF50; }
-
-    .status-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 1rem;
-        margin-top: 1rem;
-    }
-
-    .status-item {
-        background: #f9f9f9;
-        padding: 1rem;
-        border-radius: 4px;
-    }
-
-    .status-item label {
-        font-size: 0.85rem;
-        color: #666;
-        margin-bottom: 0.25rem;
-    }
-
-    .status-item value {
-        font-size: 1.1rem;
-        font-weight: 600;
-        color: #333;
-    }
-
-    .sort-icon {
-        font-size: 0.7rem;
-        margin-left: 0.25rem;
-        opacity: 0.4;
-    }
-
-    .sortable:hover .sort-icon {
-        opacity: 1;
-    }
-
-    th.sorted .sort-icon {
-        opacity: 1;
-        color: #667eea;
-    }
-
-    /* Sync button styles */
-    .sync-btn {
-        padding: 0.5rem 1rem;
-        background: #764ba2;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 0.9rem;
-        margin-left: 0.5rem;
-    }
-
-    .sync-btn:disabled {
-        background: #ccc;
-        cursor: not-allowed;
-    }
-
-    .sync-btn:hover:not(:disabled) {
-        background: #663399;
-    }
-
-    /* Loading spinner animation */
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-</style>
-{% endblock %}
+{% block title %}SQL Replication — Nitara BAM{% endblock %}
 
 {% block content %}
-<!-- Table Count Comparison with Tabs -->
-<div class="card">
-    <!-- Sync Loading Overlay -->
-    <div id="sync-loading-overlay" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center;">
-        <div style="background: white; padding: 2rem; border-radius: 8px; text-align: center;">
-            <div style="border: 4px solid #f3f3f3; border-top: 4px solid #764ba2; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 1rem;"></div>
-            <p id="sync-loading-message" style="margin: 0; color: #333;">Syncing tables...</p>
+<div class="page-header">
+    <div>
+        <div class="panel-eyebrow">Drift Analysis</div>
+        <h1 class="page-title">SQL Replication</h1>
+        <div class="page-subtitle">
+            Row-count drift between primary and each secondary for
+            <strong>{{ active_environment.display_name }}</strong>.
         </div>
     </div>
-
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-        <h2 style="margin: 0; border: none; padding: 0;">SQL Replication Status</h2>
-        <div style="font-size: 0.9rem; color: #666;">
-            Last updated: <span id="table-count-time">--:--:--</span>
-            <button onclick="fetchTableCountData()" style="margin-left: 0.5rem; padding: 0.25rem 0.75rem; border: 1px solid #667eea; background: white; color: #667eea; border-radius: 4px; cursor: pointer;">Refresh</button>
-        </div>
-    </div>
-
-    <!-- Overall Summary Stats -->
-    <div class="summary-grid">
-        <div class="summary-stat">
-            <div class="label">Tables Monitored</div>
-            <div class="value" id="summary-tables-count">-</div>
-        </div>
-        <div class="summary-stat">
-            <div class="label">Total Servers</div>
-            <div class="value" id="summary-total-servers">-</div>
-        </div>
-        <div class="summary-stat">
-            <div class="label">Servers Synced</div>
-            <div class="value success" id="summary-servers-synced">-</div>
-        </div>
-        <div class="summary-stat">
-            <div class="label">Servers Out of Sync</div>
-            <div class="value error" id="summary-servers-diff">-</div>
-        </div>
-    </div>
-
-    <!-- Server Tabs -->
-    <div class="tabs-container">
-        <div class="tabs" id="server-tabs">
-            <!-- Tabs will be dynamically generated -->
-            <p style="color: #999; padding: 1rem;">Loading server data...</p>
-        </div>
-    </div>
-
-    <!-- Tab Contents -->
-    <div id="tab-contents">
-        <!-- Tab contents will be dynamically generated -->
+    <div>
+        <button class="btn btn-secondary" onclick="fetchTableCountData()">Refresh</button>
     </div>
 </div>
+
+<div class="panel">
+    <div class="stat-grid" id="summary-grid">
+        <div class="stat"><div class="stat-label">Tables monitored</div><div class="stat-value" id="summary-tables-count">—</div></div>
+        <div class="stat"><div class="stat-label">Total servers</div><div class="stat-value" id="summary-total-servers">—</div></div>
+        <div class="stat"><div class="stat-label">Servers synced</div><div class="stat-value success" id="summary-servers-synced">—</div></div>
+        <div class="stat"><div class="stat-label">Servers out of sync</div><div class="stat-value error" id="summary-servers-diff">—</div></div>
+        <div class="stat"><div class="stat-label">Last refresh</div><div class="stat-value" id="table-count-time" style="font-family:var(--font-mono); font-size:18px;">—</div></div>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="tabs" id="server-tabs"></div>
+    <div id="tab-contents"></div>
+</div>
+
+<!-- Sync loading overlay -->
+<div id="sync-loading-overlay" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.45); z-index:200; align-items:center; justify-content:center;">
+    <div style="background:var(--bg); padding:24px; border-radius:var(--r-md); min-width:280px; text-align:center;">
+        <div style="border:3px solid var(--surface-2); border-top:3px solid var(--primary-bright); border-radius:50%; width:36px; height:36px; animation:spin 1s linear infinite; margin:0 auto 12px;"></div>
+        <p id="sync-loading-message" style="margin:0;">Syncing tables...</p>
+    </div>
+</div>
+<style>@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }</style>
 {% endblock %}
 
 {% block extra_js %}
 <script>
     const IGNORE_TABLES = {{ ignore_tables | tojson }};
+    let cached = null;
 
-    console.log('Ignore tables for monitoring:', IGNORE_TABLES);
-
-    // Global variable to store fetched data
-    let cachedReplicationData = null;
-
-    /**
-     * Fetch table count comparison data from /api/replication/table-counts
-     */
     async function fetchTableCountData() {
         try {
             const response = await fetch('/api/replication/table-counts');
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
-            cachedReplicationData = data;
-            renderTabsAndContent(data);
-            updateTableCountTimestamp();
-        } catch (error) {
-            console.error('Error fetching table count data:', error);
+            cached = data;
+            render(data);
+            updateTimestamp();
+        } catch (err) {
             document.getElementById('server-tabs').innerHTML =
-                `<div style="background-color: #FFEBEE; padding: 1rem; border-radius: 4px; color: #B71C1C;"><strong>Error:</strong> ${error.message}</div>`;
+                `<div class="banner error">${err.message}</div>`;
         }
     }
 
-    /**
-     * Render tabs and tab contents based on fetched data
-     */
-    function renderTabsAndContent(data) {
-        const tabsContainer = document.getElementById('server-tabs');
-        const contentsContainer = document.getElementById('tab-contents');
-
-        if (data.status !== 'success') {
-            tabsContainer.innerHTML = `<div style="background-color: #FFEBEE; padding: 1rem; border-radius: 4px; color: #B71C1C;"><strong>Error:</strong> ${data.error || 'Unknown error'}</div>`;
-            contentsContainer.innerHTML = '';
-            return;
-        }
-
-        // Update summary stats
-        updateSummaryStats(data);
-
-        const comparisonResults = data.comparison_results || {};
-        const primaryServer = data.primary_server;
-        const servers = Object.keys(comparisonResults);
-
-        if (servers.length === 0) {
-            tabsContainer.innerHTML = '<p style="color: #999; padding: 1rem;">No secondary servers to compare</p>';
-            contentsContainer.innerHTML = '';
-            return;
-        }
-
-        // Build tabs HTML
-        let tabsHtml = '';
-        let contentsHtml = '';
-
-        // Primary server tab (always first)
-        tabsHtml += `
-            <button class="tab active" onclick="switchTab('primary')" id="tab-primary">
-                ${primaryServer}
-                <span class="badge synced">0</span>
-            </button>
-        `;
-        contentsHtml += `<div class="tab-content active" id="content-primary">${renderPrimaryServerContent(data)}</div>`;
-
-        // Secondary server tabs
-        servers.forEach((serverName, index) => {
-            const comparisonData = comparisonResults[serverName];
-            const diffCount = countDiffs(comparisonData);
-            const hasError = comparisonData.status === 'error';
-            const badgeClass = hasError ? 'error' : (diffCount > 0 ? 'out-of-sync' : 'synced');
-
-            tabsHtml += `
-                <button class="tab" onclick="switchTab('${serverName}')" id="tab-${serverName}">
-                    ${serverName}
-                    <span class="badge ${badgeClass}">${diffCount}</span>
-                </button>
-            `;
-            contentsHtml += `<div class="tab-content" id="content-${serverName}">${renderServerContent(serverName, comparisonData)}</div>`;
-        });
-
-        tabsContainer.innerHTML = tabsHtml;
-        contentsContainer.innerHTML = contentsHtml;
-    }
-
-    /**
-     * Count tables with differences for a server (excluding ignored tables)
-     */
-    function countDiffs(comparisonData) {
-        if (!comparisonData || comparisonData.status === 'error' || !comparisonData.tables) {
-            return 0;
-        }
-        return Object.entries(comparisonData.tables)
-            .filter(([name, t]) => !t.match && !IGNORE_TABLES.includes(name))
-            .length;
-    }
-
-    /**
-     * Update summary statistics
-     */
-    function updateSummaryStats(data) {
-        const comparisonResults = data.comparison_results || {};
-        const servers = Object.keys(comparisonResults);
-
-        // Count tables with change tracking (from primary)
-        const tablesCount = data.tables_with_change_tracking ? data.tables_with_change_tracking.length : 0;
-        document.getElementById('summary-tables-count').textContent = tablesCount;
-
-        // Total servers (secondary)
+    function updateSummary(data) {
+        document.getElementById('summary-tables-count').textContent =
+            (data.tables_with_change_tracking || []).length;
+        const results = data.comparison_results || {};
+        const servers = Object.keys(results);
         document.getElementById('summary-total-servers').textContent = servers.length;
-
-        // Count synced vs out-of-sync (using countDiffs to respect ignored tables)
-        let syncedCount = 0;
-        let outOfSyncCount = 0;
-
-        servers.forEach(serverName => {
-            const comparisonData = comparisonResults[serverName];
-            if (comparisonData.status === 'error') {
-                outOfSyncCount++;
-            } else if (countDiffs(comparisonData) > 0) {
-                outOfSyncCount++;
-            } else {
-                syncedCount++;
-            }
+        let synced = 0, out = 0;
+        servers.forEach(s => {
+            const r = results[s];
+            if (r.status === 'error' || countDiffs(r) > 0) out++;
+            else synced++;
         });
-
-        document.getElementById('summary-servers-synced').textContent = syncedCount;
-        document.getElementById('summary-servers-diff').textContent = outOfSyncCount;
+        document.getElementById('summary-servers-synced').textContent = synced;
+        document.getElementById('summary-servers-diff').textContent = out;
     }
 
-    /**
-     * Render content for primary server tab
-     */
-    function renderPrimaryServerContent(data) {
+    function countDiffs(r) {
+        if (!r || r.status === 'error' || !r.tables) return 0;
+        return Object.entries(r.tables).filter(([n, t]) => !t.match && !IGNORE_TABLES.includes(n)).length;
+    }
+
+    function render(data) {
+        const tabs = document.getElementById('server-tabs');
+        const contents = document.getElementById('tab-contents');
+        if (data.status !== 'success') {
+            tabs.innerHTML = `<div class="banner error">${data.error || 'Unknown error'}</div>`;
+            return;
+        }
+        updateSummary(data);
+
+        const results = data.comparison_results || {};
+        const primary = data.primary_server;
+        const servers = Object.keys(results);
+
+        let tabsHtml = `<button class="tab active" onclick="switchTab('primary','${primary}')" id="tab-primary">
+            ${primary} <span class="badge">primary</span></button>`;
+        let contentsHtml = `<div class="tab-panel active" id="content-primary">${primaryPanel(data)}</div>`;
+
+        servers.forEach(s => {
+            const diffs = countDiffs(results[s]);
+            const err = results[s].status === 'error';
+            const badge = err ? 'error' : (diffs > 0 ? 'out-of-sync' : 'synced');
+            tabsHtml += `<button class="tab" onclick="switchTab('${s}','${s}')" id="tab-${s.replace(/\./g,'-')}">
+                ${s} <span class="badge ${badge}">${err ? 'ERR' : diffs}</span></button>`;
+            contentsHtml += `<div class="tab-panel" id="content-${s.replace(/\./g,'-')}">${serverPanel(s, results[s])}</div>`;
+        });
+
+        tabs.innerHTML = tabsHtml;
+        contents.innerHTML = contentsHtml;
+    }
+
+    function primaryPanel(data) {
         const tables = data.tables_with_change_tracking || [];
         return `
-            <div class="server-header">
-                <h3>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                    </svg>
-                    Primary Server (Reference)
-                </h3>
-                <span class="status-badge synced">${tables.length} Tables</span>
-            </div>
-            <div class="server-content" style="padding: 1rem;">
-                <p style="color: #666; margin-top: 0;">
-                    <strong>Primary Server:</strong> ${data.primary_server}<br>
-                    <strong>Tables with Change Tracking:</strong> ${tables.length}
-                </p>
-                <h4 style="margin-bottom: 0.5rem;">Monitored Tables</h4>
-                <div style="overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 4px;">
-                    <table class="comparison-table" style="margin: 0;">
-                        <thead>
-                            <tr>
-                                <th>Table Name</th>
-                                <th style="text-align: center;">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${tables.map(t => `
-                                <tr>
-                                    <td>${t}</td>
-                                    <td style="text-align: center;"><span class="diff-badge diff-positive">Tracked</span></td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
+            <div class="panel" style="margin:0; border:none; padding:0;">
+                <div class="panel-head">
+                    <div class="panel-title">${data.primary_server} · change-tracked tables</div>
                 </div>
-            </div>
-        `;
+                <table class="data-table">
+                    <thead><tr><th>Table</th><th>Status</th></tr></thead>
+                    <tbody>${tables.map(t =>
+                        `<tr><td>${t}</td><td><span class="dot green"></span> tracked</td></tr>`
+                    ).join('')}</tbody>
+                </table>
+            </div>`;
     }
 
-    /**
-     * Render content for a secondary server tab
-     */
-    function renderServerContent(serverName, comparisonData) {
-        if (comparisonData.status === 'error') {
-            return `
-                <div class="server-header">
-                    <h3>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
-                        </svg>
-                        ${serverName}
-                    </h3>
-                    <span class="status-badge error">Connection Error</span>
-                </div>
-                <div class="server-content" style="padding: 1rem;">
-                    <div style="background-color: #FFF3E0; padding: 1rem; border-radius: 4px; color: #E65100;">
-                        <strong>Error:</strong> ${comparisonData.error}
-                    </div>
-                </div>
-            `;
+    function serverPanel(name, r) {
+        if (r.status === 'error') {
+            return `<div class="banner error">${r.error}</div>`;
+        }
+        const diffs = Object.entries(r.tables || {})
+            .filter(([n, t]) => !t.match && !IGNORE_TABLES.includes(n))
+            .sort((a, b) => a[0].localeCompare(b[0]));
+
+        if (!diffs.length) {
+            return `<div class="banner">All tables synced with ${name}.</div>`;
         }
 
-        const tables = comparisonData.tables || {};
-        const matchingTables = Object.entries(tables).filter(([name, data]) => data.match);
-
-        // Filter out ignored tables from the difference count and display
-        const allDiffTables = Object.entries(tables).filter(([name, data]) => !data.match);
-        const diffTables = allDiffTables.filter(([name, data]) => !IGNORE_TABLES.includes(name));
-
-        const diffCount = diffTables.length;
-        const badgeClass = diffCount > 0 ? 'out-of-sync' : 'synced';
-
-        let html = `
-            <div class="server-header">
-                <h3>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                        ${diffCount > 0
-                            ? '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>'
-                            : '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>'}
-                    </svg>
-                    vs ${serverName}
-                </h3>
-                <span class="status-badge ${badgeClass}">${diffCount} Out of Sync</span>
-            </div>
-            <div class="server-content">
-        `;
-
-        if (diffTables.length === 0) {
-            html += `
-                <div style="padding: 2rem; text-align: center; color: #4CAF50;">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="#4CAF50" style="margin-bottom: 0.5rem;">
-                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                    </svg>
-                    <h3 style="margin: 0 0 0.5rem 0;">All Tables Synced</h3>
-                    <p style="color: #666; margin: 0;">No differences found between primary and ${serverName}.</p>
+        return `
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <strong>Tables with differences (${diffs.length})</strong>
+                    <label style="display:flex; align-items:center; gap:6px;">
+                        <input type="checkbox" onchange="toggleSelectAll('${name}', this.checked)"> Select all
+                    </label>
                 </div>
-            `;
-        } else {
-            // Sort by table name alphabetically by default
-            diffTables.sort((a, b) => a[0].localeCompare(b[0]));
-
-            html += `
-                <div style="padding: 1rem;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                        <div style="display: flex; align-items: center; gap: 1rem;">
-                            <h4 style="margin: 0;">Tables with Differences (${diffTables.length})</h4>
-                            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.85rem;">
-                                <input type="checkbox" id="select-all-${serverName.replace(/\./g, '-')}" onchange="toggleSelectAll('${serverName}', this.checked)" style="cursor: pointer;">
-                                Select All
-                            </label>
-                        </div>
-                        <div style="display: flex; gap: 0.5rem;">
-                            <button onclick="exportToCsv('${serverName}')" style="padding: 0.5rem 1rem; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem;">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
-                                </svg>
-                                Export
-                            </button>
-                            <button onclick="syncSelectedTables('${serverName}')" id="sync-btn-${serverName.replace(/\./g, '-')}" style="padding: 0.5rem 1rem; background-color: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem;" disabled>
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
-                                </svg>
-                                Sync Selected (0)
-                            </button>
-                        </div>
-                    </div>
-                    <div id="sync-status-${serverName.replace(/\./g, '-')}" style="margin-bottom: 1rem;"></div>
-                    <div style="overflow-y: auto;">
-                        <table class="comparison-table" id="diff-table-${serverName.replace(/\./g, '-')}">
-                            <thead>
-                                <tr>
-                                    <th style="width: 40px;"></th>
-                                    <th class="sortable" onclick="sortTable('${serverName}', 'tableName', this)" style="cursor: pointer;">
-                                        Table Name
-                                        <span class="sort-icon">▲</span>
-                                    </th>
-                                    <th style="text-align: right;">Primary</th>
-                                    <th style="text-align: right;">${serverName}</th>
-                                    <th class="sortable" onclick="sortTable('${serverName}', 'difference', this)" style="cursor: pointer;">
-                                        Difference
-                                        <span class="sort-icon">▲</span>
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody class="table-body">
-            `;
-
-            for (const [tableName, tableData] of diffTables) {
-                if (IGNORE_TABLES.includes(tableName)) continue;
-
-                let diffBadge = '';
-                let diffValue = 0;
-                if (typeof tableData.difference === 'number') {
-                    diffValue = tableData.difference;
-                    const diffClass = tableData.difference > 0 ? 'diff-positive' : (tableData.difference < 0 ? 'diff-negative' : '');
-                    const sign = tableData.difference > 0 ? '+' : '';
-                    diffBadge = `<span class="diff-badge ${diffClass}">${sign}${tableData.difference}</span>`;
-                } else if (tableData.status === 'missing') {
-                    diffBadge = `<span class="diff-badge diff-negative">Missing</span>`;
-                } else if (tableData.status === 'extra') {
-                    diffBadge = `<span class="diff-badge diff-positive">Extra</span>`;
-                }
-
-                html += `
-                    <tr data-table-name="${tableName}" data-difference="${diffValue}">
-                        <td style="text-align: center;">
-                            <input type="checkbox" class="table-checkbox" data-server="${serverName}" data-table="${tableName}" onchange="updateSyncButton('${serverName}')" style="cursor: pointer;">
+                <div style="display:flex; gap:8px;">
+                    <button class="btn btn-secondary" onclick="exportCsv('${name}')">Export CSV</button>
+                    <button class="btn btn-primary" id="sync-btn-${name.replace(/\./g,'-')}" disabled onclick="syncSelected('${name}')">
+                        Sync selected (0)
+                    </button>
+                </div>
+            </div>
+            <div id="sync-status-${name.replace(/\./g,'-')}" style="margin-bottom:12px;"></div>
+            <table class="data-table" id="diff-table-${name.replace(/\./g,'-')}">
+                <thead><tr>
+                    <th style="width:40px;"></th>
+                    <th>Table</th>
+                    <th style="text-align:right;">Primary</th>
+                    <th style="text-align:right;">${name}</th>
+                    <th style="text-align:right;">Δ</th>
+                </tr></thead>
+                <tbody>${diffs.map(([t, d]) => `
+                    <tr data-table-name="${t}" data-difference="${d.difference ?? 0}">
+                        <td><input type="checkbox" class="table-checkbox"
+                            data-server="${name}" data-table="${t}"
+                            onchange="updateSyncBtn('${name}')"></td>
+                        <td><code>${t}</code></td>
+                        <td style="text-align:right; font-family:var(--font-mono);">${d.primary_count ?? '—'}</td>
+                        <td style="text-align:right; font-family:var(--font-mono);">${d.secondary_count ?? '—'}</td>
+                        <td style="text-align:right; font-family:var(--font-mono);">
+                            ${typeof d.difference === 'number'
+                                ? (d.difference > 0 ? `+${d.difference}` : d.difference)
+                                : (d.status || '—')}
                         </td>
-                        <td><strong>${tableName}</strong></td>
-                        <td style="text-align: right;">${tableData.primary_count ?? 'N/A'}</td>
-                        <td style="text-align: right;">${tableData.secondary_count ?? 'N/A'}</td>
-                        <td style="text-align: right;">${diffBadge}</td>
                     </tr>
-                `;
-            }
-
-            html += `
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            `;
-        }
-
-        html += '</div>';
-        return html;
+                `).join('')}</tbody>
+            </table>`;
     }
 
-    /**
-     * Switch between tabs
-     */
-    function switchTab(tabId) {
-        // Update tab buttons
-        document.querySelectorAll('.tab').forEach(tab => {
-            tab.classList.remove('active');
-        });
-        const activeTab = document.getElementById(`tab-${tabId}`);
-        if (activeTab) {
-            activeTab.classList.add('active');
-        }
-
-        // Update tab contents
-        document.querySelectorAll('.tab-content').forEach(content => {
-            content.classList.remove('active');
-        });
-        const activeContent = document.getElementById(`content-${tabId}`);
-        if (activeContent) {
-            activeContent.classList.add('active');
-        }
+    function switchTab(tab, server) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        document.getElementById(`tab-${tab.replace(/\./g,'-')}`)?.classList.add('active');
+        document.getElementById(`content-${tab.replace(/\./g,'-')}`)?.classList.add('active');
     }
 
-    /**
-     * Export table data to CSV
-     */
-    function exportToCsv(serverName) {
-        const tableId = `diff-table-${serverName.replace(/\./g, '-')}`;
-        const table = document.getElementById(tableId);
-        if (!table) return;
-
-        const tbody = table.querySelector('.table-body');
-        const rows = Array.from(tbody.querySelectorAll('tr'));
-
-        // CSV header
-        let csv = 'Table Name,Primary Count,Secondary Count,Difference\n';
-
-        // Add data rows
-        rows.forEach(row => {
-            const tableName = row.getAttribute('data-table-name') || '';
-            const primaryCount = row.cells[1]?.textContent?.trim() || '';
-            const secondaryCount = row.cells[2]?.textContent?.trim() || '';
-            const diffValue = row.getAttribute('data-difference') || '';
-            csv += `"${tableName}",${primaryCount},${secondaryCount},${diffValue}\n`;
-        });
-
-        // Generate filename: IP_Diff_Timestamp.csv
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        const filename = `${serverName}_Diff_${timestamp}.csv`;
-
-        // Download CSV
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = filename;
-        link.click();
-        URL.revokeObjectURL(link.href);
+    function toggleSelectAll(server, checked) {
+        document.querySelectorAll(`#diff-table-${server.replace(/\./g,'-')} .table-checkbox`)
+            .forEach(cb => cb.checked = checked);
+        updateSyncBtn(server);
     }
 
-    /**
-     * Sort table by column
-     */
-    function sortTable(serverName, column, thElement) {
-        const tableId = `diff-table-${serverName.replace(/\./g, '-')}`;
-        const table = document.getElementById(tableId);
-        if (!table) return;
-
-        const tbody = table.querySelector('.table-body');
-        const rows = Array.from(tbody.querySelectorAll('tr'));
-
-        // Get current sort state
-        const isAsc = thElement.classList.contains('sorted-asc');
-
-        // Remove sorted class from all headers
-        table.querySelectorAll('th').forEach(th => {
-            th.classList.remove('sorted', 'sorted-asc', 'sorted-desc');
-        });
-
-        // Add sorted class and set direction
-        thElement.classList.add('sorted');
-        if (isAsc) {
-            thElement.classList.add('sorted-desc');
-            thElement.querySelector('.sort-icon').textContent = '▼';
-        } else {
-            thElement.classList.add('sorted-asc');
-            thElement.querySelector('.sort-icon').textContent = '▲';
-        }
-
-        // Sort rows
-        rows.sort((a, b) => {
-            let valA, valB;
-
-            if (column === 'tableName') {
-                valA = a.getAttribute('data-table-name');
-                valB = b.getAttribute('data-table-name');
-                return isAsc ? valB.localeCompare(valA) : valA.localeCompare(valB);
-            } else if (column === 'difference') {
-                valA = parseInt(a.getAttribute('data-difference')) || 0;
-                valB = parseInt(b.getAttribute('data-difference')) || 0;
-                return isAsc ? valB - valA : valA - valB;
-            }
-            return 0;
-        });
-
-        // Re-append sorted rows
-        rows.forEach(row => tbody.appendChild(row));
-    }
-
-    /**
-     * Toggle select all checkboxes for a server
-     */
-    function toggleSelectAll(serverName, checked) {
-        const tableId = `diff-table-${serverName.replace(/\./g, '-')}`;
-        const table = document.getElementById(tableId);
-        if (!table) return;
-
-        const checkboxes = table.querySelectorAll('.table-checkbox');
-        checkboxes.forEach(cb => {
-            cb.checked = checked;
-        });
-        updateSyncButton(serverName);
-    }
-
-    /**
-     * Update sync button count and enabled state
-     */
-    function updateSyncButton(serverName) {
-        const tableId = `diff-table-${serverName.replace(/\./g, '-')}`;
-        const table = document.getElementById(tableId);
-        if (!table) return;
-
-        const checkboxes = table.querySelectorAll('.table-checkbox:checked');
-        const count = checkboxes.length;
-
-        const btnId = `sync-btn-${serverName.replace(/\./g, '-')}`;
-        const btn = document.getElementById(btnId);
+    function updateSyncBtn(server) {
+        const sel = document.querySelectorAll(`#diff-table-${server.replace(/\./g,'-')} .table-checkbox:checked`);
+        const btn = document.getElementById(`sync-btn-${server.replace(/\./g,'-')}`);
         if (btn) {
-            btn.textContent = `Sync Selected (${count})`;
-            btn.disabled = count === 0;
+            btn.disabled = sel.length === 0;
+            btn.textContent = `Sync selected (${sel.length})`;
         }
     }
 
-    /**
-     * Sync selected tables to secondary server
-     */
-    async function syncSelectedTables(serverName) {
-        const tableId = `diff-table-${serverName.replace(/\./g, '-')}`;
-        const table = document.getElementById(tableId);
-        if (!table) return;
+    async function syncSelected(server) {
+        const sel = Array.from(
+            document.querySelectorAll(`#diff-table-${server.replace(/\./g,'-')} .table-checkbox:checked`)
+        ).map(cb => cb.dataset.table);
+        if (!sel.length) return;
 
-        // Get selected tables
-        const checkboxes = table.querySelectorAll('.table-checkbox:checked');
-        const selectedTables = Array.from(checkboxes).map(cb => cb.getAttribute('data-table'));
-
-        if (selectedTables.length === 0) {
-            alert('Please select at least one table to sync.');
-            return;
-        }
-
-        // Show loading overlay
-        const loadingOverlay = document.getElementById('sync-loading-overlay');
-        const loadingMessage = document.getElementById('sync-loading-message');
-        if (loadingOverlay) {
-            loadingMessage.textContent = `Syncing ${selectedTables.length} table(s) to ${serverName}...`;
-            loadingOverlay.style.display = 'flex';
-        }
+        const overlay = document.getElementById('sync-loading-overlay');
+        const msg = document.getElementById('sync-loading-message');
+        msg.textContent = `Syncing ${sel.length} table(s) → ${server}...`;
+        overlay.style.display = 'flex';
 
         try {
-            const response = await fetch('/api/replication/sync', {
+            const res = await fetch('/api/replication/sync', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    server: serverName,
-                    tables: selectedTables
-                })
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ server, tables: sel })
             });
-
-            const result = await response.json();
-
-            // Hide loading overlay
-            if (loadingOverlay) {
-                loadingOverlay.style.display = 'none';
-            }
-
-            // Show results
-            showSyncResults(serverName, result);
-
-        } catch (error) {
-            // Hide loading overlay
-            if (loadingOverlay) {
-                loadingOverlay.style.display = 'none';
-            }
-            alert(`Sync failed: ${error.message}`);
+            const result = await res.json();
+            showResults(server, result);
+        } catch (err) {
+            alert(`Sync failed: ${err.message}`);
+        } finally {
+            overlay.style.display = 'none';
         }
     }
 
-    /**
-     * Show sync results in a modal
-     */
-    function showSyncResults(serverName, result) {
-        let html = `<h3>Sync Results for ${serverName}</h3>`;
-
+    function showResults(server, result) {
+        const statusEl = document.getElementById(`sync-status-${server.replace(/\./g,'-')}`);
+        if (!statusEl) return;
         if (result.error) {
-            html += `<p style="color: red;">Error: ${result.error}</p>`;
-        } else if (result.results && result.results.length > 0) {
-            html += '<table style="width: 100%; border-collapse: collapse; margin-top: 10px;">';
-            html += '<tr style="background: #f0f0f0;"><th style="padding: 8px; border: 1px solid #ddd;">Table</th><th style="padding: 8px; border: 1px solid #ddd;">Status</th><th style="padding: 8px; border: 1px solid #ddd;">Details</th></tr>';
-
-            result.results.forEach(r => {
-                const statusColor = r.status === 'success' ? 'green' : (r.status === 'error' ? 'red' : 'orange');
-                const statusText = r.status === 'success' ? 'Success' : (r.status === 'error' ? 'Error' : 'Skipped');
-                const details = r.status === 'success' ? `Rows affected: ${r.rows_affected || 0}` : (r.error || '');
-
-                html += `<tr>
-                    <td style="padding: 8px; border: 1px solid #ddd;">${r.table}</td>
-                    <td style="padding: 8px; border: 1px solid #ddd; color: ${statusColor}; font-weight: bold;">${statusText}</td>
-                    <td style="padding: 8px; border: 1px solid #ddd;">${details}</td>
-                </tr>`;
-            });
-            html += '</table>';
+            statusEl.innerHTML = `<div class="banner error">${result.error}</div>`;
+            return;
         }
-
-        // Create and show modal
-        const modal = document.createElement('div');
-        modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;';
-        modal.innerHTML = `
-            <div style="background: white; padding: 20px; border-radius: 8px; max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto;">
-                ${html}
-                <div style="margin-top: 15px; text-align: right;">
-                    <button onclick="this.closest('div').remove(); location.reload();" style="padding: 8px 20px; background: #764ba2; color: white; border: none; border-radius: 4px; cursor: pointer;">Close & Refresh</button>
-                    <button onclick="this.closest('div').remove();" style="padding: 8px 20px; background: #ccc; color: #333; border: none; border-radius: 4px; cursor: pointer; margin-left: 10px;">Close</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(modal);
-
-        // Close on background click
-        modal.addEventListener('click', function(e) {
-            if (e.target === modal) {
-                modal.remove();
-            }
-        });
+        const rows = (result.results || []).map(r => {
+            const cls = r.status === 'success' ? 'success'
+                      : r.status === 'error' ? 'error' : '';
+            const details = r.status === 'success'
+                ? `${r.rows_affected || 0} rows · Kafka: ${r.kafka_published ?? 0}`
+                : (r.error || '');
+            return `<tr>
+                <td><code>${r.table}</code></td>
+                <td><span class="stat-value ${cls}" style="font-size:14px;">${r.status}</span></td>
+                <td style="font-family:var(--font-mono); font-size:12px;">${details}</td>
+            </tr>`;
+        }).join('');
+        statusEl.innerHTML = `
+            <div class="banner">Sync results for <strong>${server}</strong></div>
+            <table class="data-table">${rows}</table>
+            <div style="margin-top:8px;"><button class="btn btn-secondary" onclick="fetchTableCountData()">Refresh data</button></div>`;
     }
 
-    /**
-     * Update table count timestamp
-     */
-    function updateTableCountTimestamp() {
-        const now = new Date();
-        const hours = String(now.getHours()).padStart(2, '0');
-        const minutes = String(now.getMinutes()).padStart(2, '0');
-        const seconds = String(now.getSeconds()).padStart(2, '0');
-        const timeString = `${hours}:${minutes}:${seconds}`;
-
-        const timeEl = document.getElementById('table-count-time');
-        if (timeEl) {
-            timeEl.textContent = timeString;
-        }
+    function exportCsv(server) {
+        const rows = Array.from(
+            document.querySelectorAll(`#diff-table-${server.replace(/\./g,'-')} tbody tr`)
+        );
+        const csv = ['Table Name,Primary,Secondary,Δ'].concat(rows.map(r => {
+            const cells = r.querySelectorAll('td');
+            return `"${r.dataset.tableName}",${cells[2]?.textContent.trim()},${cells[3]?.textContent.trim()},${r.dataset.difference}`;
+        })).join('\n');
+        const blob = new Blob([csv], {type:'text/csv'});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `${server}_Diff_${new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)}.csv`;
+        a.click();
+        URL.revokeObjectURL(a.href);
     }
 
-    // Fetch table count data on page load
-    document.addEventListener('DOMContentLoaded', function() {
-        fetchTableCountData();
-    });
+    function updateTimestamp() {
+        const t = new Date().toTimeString().slice(0,8);
+        document.getElementById('table-count-time').textContent = t;
+    }
+
+    document.addEventListener('DOMContentLoaded', fetchTableCountData);
 </script>
 {% endblock %}
