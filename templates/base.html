@@ -112,6 +112,100 @@
             border-radius: 9999px;
             background: var(--primary-bright);
         }
+        .env-switcher {
+            position: relative;
+        }
+        .env-switcher-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 12px;
+            background: var(--primary-tint);
+            border: 1px solid var(--border);
+            border-radius: 9999px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--primary-hover);
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: background-color 120ms ease, border-color 120ms ease;
+        }
+        .env-switcher-toggle:hover {
+            border-color: var(--primary);
+            background: var(--primary-tint);
+        }
+        .env-switcher-toggle::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            border-radius: 9999px;
+            background: var(--primary-bright);
+        }
+        .env-switcher-toggle::after {
+            content: '▾';
+            font-size: 10px;
+            opacity: 0.6;
+        }
+        .env-switcher-menu {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            min-width: 220px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: var(--r-md);
+            box-shadow: var(--shadow-pop);
+            z-index: 100;
+            display: none;
+            overflow: hidden;
+        }
+        .env-switcher-menu.open { display: block; }
+        .env-switcher-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 14px;
+            color: var(--on-surface);
+            font-family: var(--font-body);
+            font-size: 13px;
+            text-transform: none;
+            letter-spacing: 0;
+            cursor: pointer;
+            transition: background-color 80ms ease;
+            text-decoration: none;
+            gap: 10px;
+        }
+        .env-switcher-item + .env-switcher-item {
+            border-top: 1px solid var(--border);
+        }
+        .env-switcher-item:hover {
+            background: var(--surface-2);
+        }
+        .env-switcher-item.current {
+            background: var(--primary-tint);
+            color: var(--primary-hover);
+            font-weight: 500;
+        }
+        .env-switcher-item .env-meta {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--outline);
+            letter-spacing: 0.02em;
+        }
+        .env-switcher-item .env-warn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 16px;
+            height: 16px;
+            color: #b45309;
+            flex-shrink: 0;
+        }
+        .env-switcher-item .env-warn svg {
+            width: 14px;
+            height: 14px;
+        }
         .topbar-actions {
             display: flex;
             align-items: center;
@@ -472,8 +566,35 @@
         <div class="topbar-left">
             <div class="topbar-brand">Nitara BAM</div>
             <div class="topbar-meta">// DB → Kafka sync monitor</div>
-            {% if active_environment %}
-            <div class="env-pill">{{ active_environment.display_name }} · {{ active_environment.value }}</div>
+            {% if active_environment and all_environments %}
+            <div class="env-switcher" id="envSwitcher">
+                <button type="button" class="env-switcher-toggle" onclick="toggleEnvMenu(event)">
+                    {{ active_environment.display_name }} · {{ active_environment.value }}
+                </button>
+                <div class="env-switcher-menu" id="envMenu">
+                    {% for env in all_environments %}
+                    {% set warn = env._warning %}
+                    <form method="POST" action="/select-environment" style="margin:0;">
+                        <input type="hidden" name="env" value="{{ env.value }}">
+                        {% set next_url = request.full_path.rstrip('?') if request.query_string else request.path %}
+                        <input type="hidden" name="next" value="{{ next_url }}">
+                        <button type="submit"
+                                class="env-switcher-item {{ 'current' if env.value == active_environment.value else '' }}"
+                                style="width:100%; background:transparent; border:0; text-align:left; padding:0;">
+                            <span>{{ env.display_name }}</span>
+                            <span style="display:flex; align-items:center; gap:8px;">
+                                {% if warn %}
+                                <span class="env-warn" title="Missing config: {{ 'kafka brokers' if not env.kafka_brokers else '' }}{{ ', ' if not env.kafka_brokers and (not has_primary or not has_secondary) else '' }}{{ 'primary DB' if not has_primary else '' }}{{ ', ' if not has_primary and not has_secondary else '' }}{{ 'secondary DB' if not has_secondary else '' }}">
+                                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L1 21h22L12 2zm0 4.5L19.5 19h-15L12 6.5zM11 11v4h2v-4h-2zm0 5v2h2v-2h-2z"/></svg>
+                                </span>
+                                {% endif %}
+                                <span class="env-meta">{{ env.value }}</span>
+                            </span>
+                        </button>
+                    </form>
+                    {% endfor %}
+                </div>
+            </div>
             {% endif %}
         </div>
         <nav class="topbar-actions">
@@ -522,5 +643,19 @@
     </div>
 
     {% block extra_js %}{% endblock %}
+    <script>
+        function toggleEnvMenu(ev) {
+            ev.stopPropagation();
+            const menu = document.getElementById('envMenu');
+            if (menu) menu.classList.toggle('open');
+        }
+        document.addEventListener('click', function(ev) {
+            const sw = document.getElementById('envSwitcher');
+            if (sw && !sw.contains(ev.target)) {
+                const menu = document.getElementById('envMenu');
+                if (menu) menu.classList.remove('open');
+            }
+        });
+    </script>
 </body>
 </html>

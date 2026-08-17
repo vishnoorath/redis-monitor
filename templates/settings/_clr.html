@@ -1,0 +1,80 @@
+<!--
+  CLR tab — list of CLR column overrides (Delete per row) + Add form.
+  Each form is independent and posts via the shell's event-delegated handler.
+-->
+<div class="panel">
+    <div class="panel-head">
+        <div>
+            <div class="panel-eyebrow">Sync · CLR handling</div>
+            <div class="panel-title">CLR column overrides</div>
+        </div>
+    </div>
+
+    <div class="form-hint" style="margin-bottom:12px;">
+        Tables with CLR-type columns (e.g. <code>geography</code>) can't be read via 4-part-name
+        distributed queries. The sync pipeline falls back to a CLR-safe path that OPENQUERYs the
+        primary through the secondary. Use this map to tell the secondary how to CAST each CLR
+        column when streaming missing rows back. The default is <code>NVARCHAR(MAX)</code>.
+    </div>
+
+    {% if clr_overrides %}
+    <table class="data-table" style="margin-bottom:12px;">
+        <thead><tr>
+            <th>Table</th>
+            <th>Column</th>
+            <th>CAST AS</th>
+            <th>Notes</th>
+            <th style="width:80px;"></th>
+        </tr></thead>
+        <tbody>
+        {% for o in clr_overrides %}
+            <tr>
+                <td><code>{{ o.table_name }}</code></td>
+                <td><code>{{ o.column_name }}</code></td>
+                <td><code style="font-family:var(--font-mono);">{{ o.cast_as }}</code></td>
+                <td style="font-family:var(--font-mono); font-size:12px;">{{ o.notes }}</td>
+                <td>
+                    <form data-ajax-form action="/settings/clr/delete" method="POST" style="display:inline;">
+                        <input type="hidden" name="table_name" value="{{ o.table_name }}">
+                        <input type="hidden" name="column_name" value="{{ o.column_name }}">
+                        <button type="submit" class="btn btn-secondary" style="padding:4px 8px; font-size:12px;">Delete</button>
+                    </form>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="form-hint" style="margin-bottom:12px;">No overrides configured.</div>
+    {% endif %}
+
+    <details>
+        <summary style="cursor:pointer; color:var(--primary); font-family:var(--font-mono); font-size:12px; letter-spacing:0.05em;">+ ADD OVERRIDE</summary>
+        <form data-ajax-form id="clrAddForm" action="/settings/clr/add" method="POST" style="margin-top:12px;">
+            <div class="form-grid-2">
+                <div class="form-row">
+                    <label class="form-label" for="clr_table">Table name</label>
+                    <input type="text" id="clr_table" name="table_name" class="input mono" placeholder="Farms" required />
+                </div>
+                <div class="form-row">
+                    <label class="form-label" for="clr_column">Column name</label>
+                    <input type="text" id="clr_column" name="column_name" class="input mono" placeholder="GeoPoint" required />
+                </div>
+                <div class="form-row">
+                    <label class="form-label" for="clr_cast">CAST AS</label>
+                    <input type="text" id="clr_cast" name="cast_as" class="input mono"
+                           value="NVARCHAR(MAX)" placeholder="NVARCHAR(MAX)" required />
+                    <div class="form-hint">SQL Server target type (e.g. NVARCHAR(MAX), VARCHAR(8000)).</div>
+                </div>
+                <div class="form-row">
+                    <label class="form-label" for="clr_notes">Notes (optional)</label>
+                    <input type="text" id="clr_notes" name="notes" class="input"
+                           placeholder="[dbo].[Farms].[GeoPoint] is geography (CLR)" />
+                </div>
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button type="submit" class="btn btn-primary">Add / Update</button>
+            </div>
+        </form>
+    </details>
+</div>

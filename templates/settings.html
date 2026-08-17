@@ -8,271 +8,282 @@
         <div class="panel-eyebrow">Configuration</div>
         <h1 class="page-title">Settings</h1>
         <div class="page-subtitle">
-            Active env: <strong>{{ active_environment.display_name }}</strong>. Switch environment on the startup screen.
+            Active env: <strong>{{ active_environment.display_name }}</strong>.
+            Switch environment on the top bar.
         </div>
-    </div>
-    <div>
-        <a href="/select-environment" class="btn btn-secondary">Switch environment →</a>
     </div>
 </div>
 
-{% if saved %}
-<div class="banner">
-    Settings saved for environment <strong>{{ active_environment.display_name }}</strong>.
+<div id="tab-banner" style="display:none;"></div>
+
+<!-- ──────────────────────────── TABS ──────────────────────────── -->
+<div class="tabs" id="settingsTabs">
+    <button class="tab active" data-tab="general"  onclick="loadSettingsTab('general')">General</button>
+    <button class="tab"        data-tab="kafka"    onclick="loadSettingsTab('kafka')">Kafka</button>
+    <button class="tab"        data-tab="databases" onclick="loadSettingsTab('databases')">Database Servers</button>
+    <button class="tab"        data-tab="clr"      onclick="loadSettingsTab('clr')">CLR Overrides</button>
 </div>
-{% endif %}
 
-<form method="POST" action="/settings">
+<div id="tab-content" data-tab="general">
+    <div class="form-hint" style="padding:24px; text-align:center;">Loading…</div>
+</div>
 
-    <!-- Kafka section -->
-    <div class="panel">
-        <div class="panel-head">
-            <div>
-                <div class="panel-eyebrow">Kafka · {{ active_environment.value }}_sync_changes_backlog</div>
-                <div class="panel-title">Kafka brokers for {{ active_environment.display_name }}</div>
-            </div>
-            <div>
-                {% if active_environment.kafka_clustered %}
-                <span class="badge" style="font-family:var(--font-mono);">clustered (3-node)</span>
-                {% else %}
-                <span class="badge" style="font-family:var(--font-mono);">single</span>
-                {% endif %}
-            </div>
+<!-- Edit server dialog (global — opened from the databases tab) -->
+<dialog id="editServerDialog" style="border:1px solid var(--border); border-radius:var(--r-md); padding:0; max-width:560px; width:90%;">
+    <div style="padding:16px;">
+        <div class="panel-head" style="margin-bottom:12px;">
+            <div class="panel-title">Edit database server</div>
         </div>
-
-        <div class="form-row">
-            <label class="form-label" for="kafka_brokers">
-                Bootstrap servers
-            </label>
-            <input
-                type="text"
-                id="kafka_brokers"
-                name="kafka_brokers"
-                class="input mono"
-                value="{{ active_environment.kafka_brokers or '' }}"
-                placeholder="10.10.98.39:9092                       (single)
-10.10.98.36:9092,10.10.98.37:9092,10.10.98.38:9092   (clustered)"
-            />
-            <div class="form-hint">
-                Comma-separated host:port pairs. The producer connects to all of them —
-                the client handles both single and clustered topologies automatically.
-            </div>
-        </div>
-
-        <div class="form-row">
-            <label class="form-label" style="display:flex; align-items:center; gap:8px;">
-                <input type="checkbox" name="kafka_clustered" value="true" {% if active_environment.kafka_clustered %}checked{% endif %}>
-                Brokers form a Kafka cluster (recommended for {{ 'Prod' if active_environment.display_name == 'Prod' else 'this env — leave off for single broker' }})
-            </label>
-        </div>
-    </div>
-
-    <!-- Per-env app settings -->
-    <div class="panel">
-        <div class="panel-head">
-            <div class="panel-title">Application settings for {{ active_environment.display_name }}</div>
-        </div>
-
-        <div class="form-grid-2">
-            <div class="form-row">
-                <label class="form-label" for="refresh_frequency">Refresh frequency (seconds)</label>
-                <input type="number" id="refresh_frequency" name="refresh_frequency"
-                       class="input" min="10" max="300" step="5"
-                       value="{{ active_environment.settings.refresh_frequency | default(30) }}" />
-            </div>
-            <div class="form-row">
-                <label class="form-label" for="notified_emails">Notified emails (one per line)</label>
-                <textarea id="notified_emails" name="notified_emails" class="textarea"
-                          placeholder="admin@example.com&#10;support@example.com">{{ active_environment.settings.notified_emails | default('', true) }}</textarea>
-            </div>
-        </div>
-
-        <div class="form-row">
-            <label class="form-label" for="ignore_tables">Ignore tables (one per line)</label>
-            <textarea id="ignore_tables" name="ignore_tables" class="textarea"
-                      placeholder="tbl_Msg91SmSFailureCallbackLog&#10;tbl_MessageLangVariant">{{ active_environment.settings.ignore_tables | default('', true) }}</textarea>
-            <div class="form-hint">Tables to exclude from SQL replication difference monitoring.</div>
-        </div>
-    </div>
-
-    <!-- Servers -->
-    <div class="panel">
-        <div class="panel-head">
-            <div class="panel-title">Database servers</div>
-            <button type="button" class="btn btn-secondary" onclick="showAddServerForm()">+ Add server</button>
-        </div>
-
-        <div id="serverList"></div>
-
-        <div id="addServerForm" class="panel" style="margin-top:12px; display:none; border-style:dashed;">
-            <div class="panel-head"><div class="panel-title">Add new server</div></div>
+        <form data-ajax-form id="editServerForm" action="/settings/server-edit" method="POST">
+            <input type="hidden" id="editServerOriginalIp" name="server_ip">
             <div class="form-grid-2">
                 <div class="form-row">
-                    <label class="form-label" for="newServer">Server IP / hostname</label>
-                    <input type="text" id="newServer" class="input mono" placeholder="10.10.98.66" />
+                    <label class="form-label" for="editServerField">Server IP / hostname</label>
+                    <input type="text" id="editServerField" name="server" class="input mono" required>
                 </div>
                 <div class="form-row">
-                    <label class="form-label" for="newDb">Database</label>
-                    <input type="text" id="newDb" class="input" placeholder="NitaraDB" />
+                    <label class="form-label" for="editPortField">Port</label>
+                    <input type="text" id="editPortField" name="port" class="input mono">
                 </div>
                 <div class="form-row">
-                    <label class="form-label" for="newUser">Username</label>
-                    <input type="text" id="newUser" class="input" placeholder="sa" />
+                    <label class="form-label" for="editDbField">Database</label>
+                    <input type="text" id="editDbField" name="db" class="input">
                 </div>
                 <div class="form-row">
-                    <label class="form-label" for="newPassword">Password</label>
-                    <input type="password" id="newPassword" class="input mono" />
+                    <label class="form-label" for="editUserField">Username</label>
+                    <input type="text" id="editUserField" name="user" class="input">
                 </div>
                 <div class="form-row" style="grid-column:1 / -1;">
-                    <label style="display:flex; align-items:center; gap:8px;">
-                        <input type="checkbox" id="newIsPrimary"> Primary server
-                    </label>
+                    <label class="form-label" for="editPasswordField">Password (leave blank to keep current)</label>
+                    <input type="password" id="editPasswordField" name="password" class="input mono">
                 </div>
             </div>
-            <div style="display:flex; gap:8px;">
-                <button type="button" class="btn btn-primary" onclick="addServer()">Add</button>
-                <button type="button" class="btn btn-secondary" onclick="hideAddServerForm()">Cancel</button>
+            <div style="display:flex; gap:8px; margin-top:12px; justify-content:flex-end;">
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('editServerDialog').close()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save</button>
             </div>
-        </div>
+        </form>
     </div>
-
-    <input type="hidden" id="serversJson" name="servers" value="">
-
-    <!-- CLR column overrides -->
-    <div class="panel">
-        <div class="panel-head">
-            <div>
-                <div class="panel-eyebrow">Sync · CLR handling</div>
-                <div class="panel-title">CLR column overrides</div>
-            </div>
-        </div>
-
-        <div class="form-hint" style="margin-bottom:12px;">
-            Tables with CLR-type columns (e.g. <code>geography</code>) can't be read via 4-part-name
-            distributed queries. The sync pipeline falls back to a CLR-safe path that OPENQUERYs the
-            primary through the secondary. Use this map to tell the secondary how to CAST each CLR
-            column when streaming missing rows back. The default is <code>NVARCHAR(MAX)</code>.
-        </div>
-
-        {% if clr_overrides %}
-        <table class="data-table" style="margin-bottom:12px;">
-            <thead><tr>
-                <th>Table</th>
-                <th>Column</th>
-                <th>CAST AS</th>
-                <th>Notes</th>
-                <th style="width:80px;"></th>
-            </tr></thead>
-            <tbody>
-            {% for o in clr_overrides %}
-                <tr>
-                    <td><code>{{ o.table_name }}</code></td>
-                    <td><code>{{ o.column_name }}</code></td>
-                    <td><code style="font-family:var(--font-mono);">{{ o.cast_as }}</code></td>
-                    <td style="font-family:var(--font-mono); font-size:12px;">{{ o.notes }}</td>
-                    <td>
-                        <form method="POST" action="/settings/clr/delete" style="display:inline;">
-                            <input type="hidden" name="table_name" value="{{ o.table_name }}">
-                            <input type="hidden" name="column_name" value="{{ o.column_name }}">
-                            <button type="submit" class="btn btn-secondary" style="padding:4px 8px; font-size:12px;">Delete</button>
-                        </form>
-                    </td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
-        <div class="form-hint" style="margin-bottom:12px;">No overrides configured.</div>
-        {% endif %}
-
-        <details>
-            <summary style="cursor:pointer; color:var(--primary); font-family:var(--font-mono); font-size:12px; letter-spacing:0.05em;">+ ADD OVERRIDE</summary>
-            <form method="POST" action="/settings/clr/add" style="margin-top:12px;">
-                <div class="form-grid-2">
-                    <div class="form-row">
-                        <label class="form-label" for="clr_table">Table name</label>
-                        <input type="text" id="clr_table" name="table_name" class="input mono" placeholder="Farms" required />
-                    </div>
-                    <div class="form-row">
-                        <label class="form-label" for="clr_column">Column name</label>
-                        <input type="text" id="clr_column" name="column_name" class="input mono" placeholder="GeoPoint" required />
-                    </div>
-                    <div class="form-row">
-                        <label class="form-label" for="clr_cast">CAST AS</label>
-                        <input type="text" id="clr_cast" name="cast_as" class="input mono"
-                               value="NVARCHAR(MAX)" placeholder="NVARCHAR(MAX)" required />
-                        <div class="form-hint">SQL Server target type (e.g. NVARCHAR(MAX), VARCHAR(8000)).</div>
-                    </div>
-                    <div class="form-row">
-                        <label class="form-label" for="clr_notes">Notes (optional)</label>
-                        <input type="text" id="clr_notes" name="notes" class="input"
-                               placeholder="[dbo].[Farms].[GeoPoint] is geography (CLR)" />
-                    </div>
-                </div>
-                <div style="display:flex; gap:8px;">
-                    <button type="submit" class="btn btn-primary">Add / Update</button>
-                </div>
-            </form>
-        </details>
-    </div>
-
-    <div style="display:flex; gap:8px; margin-top:24px;">
-        <button type="submit" class="btn btn-primary">Save settings</button>
-        <button type="reset" class="btn btn-secondary">Reset</button>
-    </div>
-</form>
+</dialog>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-    const servers = {{ active_environment.settings.servers | default([], true) | tojson }};
-    const serverList = document.getElementById('serverList');
-    const serversJsonInput = document.getElementById('serversJson');
+// ── Settings page — AJAX tab loader ─────────────────────────────
+//
+// Architecture:
+//   - The shell renders tab buttons + an empty #tab-content container.
+//   - loadSettingsTab(name) fetches the partial from /settings/tab/<name>
+//     and injects the HTML. Each tab is fully self-contained.
+//   - Every form inside #tab-content has the data-ajax-form attribute.
+//     A delegated submit handler intercepts those forms, posts via fetch,
+//     shows a success/error banner, and re-fetches the affected tab so
+//     the new server state is reflected.
+//   - Env switching still does a full page reload (via base.html's
+//     env-switcher forms) — env change is a different operation.
 
-    function renderServers() {
-        serversJsonInput.value = JSON.stringify(servers);
-        if (!servers.length) {
-            serverList.innerHTML = '<div class="form-hint">No servers configured. Click "+ Add server" to add one.</div>';
+const SETTINGS_TABS = ['general', 'kafka', 'databases', 'clr'];
+let currentTab = 'general';
+
+function setBanner(message, type) {
+    const b = document.getElementById('tab-banner');
+    if (!b) return;
+    if (!message) { b.innerHTML = ''; b.style.display = 'none'; b.className = ''; return; }
+    b.className = 'banner' + (type === 'error' ? ' error' : '');
+    b.innerHTML = message;
+    b.style.display = 'block';
+    if (type !== 'error') {
+        setTimeout(() => {
+            // Only clear if the banner still shows the same message
+            if (b.innerHTML === message) { b.innerHTML = ''; b.style.display = 'none'; b.className = ''; }
+        }, 4000);
+    }
+}
+
+async function loadSettingsTab(name) {
+    if (!SETTINGS_TABS.includes(name)) return;
+    currentTab = name;
+    document.querySelectorAll('#settingsTabs .tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.tab === name);
+    });
+    const content = document.getElementById('tab-content');
+    content.dataset.tab = name;
+    content.innerHTML = '<div class="form-hint" style="padding:24px; text-align:center;">Loading…</div>';
+    setBanner(null);
+    try {
+        // Cache-bust every tab load: the partial reflects the live DB state
+        // for the active env (brokers, server list, sync_to_kafka flags),
+        // and the browser must always re-fetch after an env switch or save.
+        const cb = Date.now();
+        const r = await fetch(`/settings/tab/${name}?v=${cb}`, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+        if (!r.ok) {
+            content.innerHTML = `<div class="banner error">Failed to load tab: HTTP ${r.status} ${r.statusText}</div>`;
             return;
         }
-        serverList.innerHTML = servers.map((s, i) => `
-            <div class="panel" style="margin-bottom:8px; padding:12px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                    <div>
-                        <div style="font-weight:600;">${s.server}${s.isPrimary ? ' (Primary)' : ''}</div>
-                        <div class="form-hint">${s.db} · ${s.user} · ${s.password ? '••••••' : 'no password'}</div>
-                    </div>
-                    <button type="button" class="btn btn-secondary" onclick="removeServer(${i})">Remove</button>
-                </div>
-            </div>
-        `).join('');
+        const html = await r.text();
+        content.innerHTML = html;
+        // Re-initialize per-tab JS if needed
+        if (typeof window[`init_${name}_tab`] === 'function') {
+            try { window[`init_${name}_tab`](); } catch (e) { console.error('init_' + name + '_tab:', e); }
+        }
+    } catch (e) {
+        content.innerHTML = `<div class="banner error">Network error: ${e.message}</div>`;
     }
+}
 
-    function showAddServerForm() {
-        document.getElementById('addServerForm').style.display = 'block';
+async function reloadCurrentTab() {
+    await loadSettingsTab(currentTab);
+}
+
+// ── Delegated AJAX form submit handler ──────────────────────────
+// Every form with [data-ajax-form] inside #tab-content is submitted via
+// fetch. On success: show banner + reload the current tab. On error:
+// show error banner, leave the form alone so the user can fix it.
+document.getElementById('tab-content').addEventListener('submit', async (e) => {
+    const form = e.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    if (!form.hasAttribute('data-ajax-form')) return;
+    e.preventDefault();
+
+    const submitBtn = form.querySelector('button[type=submit], button:not([type])');
+    if (submitBtn) submitBtn.disabled = true;
+    setBanner(null);
+
+    try {
+        const r = await fetch(form.action, {
+            method: form.method || 'POST',
+            body: new FormData(form),
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        let data = null;
+        try { data = await r.json(); } catch (_) { data = { status: r.ok ? 'success' : 'error', message: r.statusText }; }
+
+        if (r.ok && data && data.status === 'success') {
+            // Close the edit dialog if the edit-server form just succeeded
+            if (form.id === 'editServerForm') {
+                const dlg = document.getElementById('editServerDialog');
+                if (dlg && dlg.open) dlg.close();
+            }
+            // Hide the add-server form if the add-server form just succeeded
+            if (form.id === 'addServerFormEl') {
+                const af = document.getElementById('addServerForm');
+                if (af) af.style.display = 'none';
+            }
+            setBanner(data.message || 'Saved.');
+            await reloadCurrentTab();
+        } else {
+            setBanner((data && data.message) || `Error: HTTP ${r.status}`, 'error');
+        }
+    } catch (err) {
+        setBanner(`Network error: ${err.message}`, 'error');
+    } finally {
+        if (submitBtn) submitBtn.disabled = false;
     }
-    function hideAddServerForm() {
-        document.getElementById('addServerForm').style.display = 'none';
-        ['newServer','newDb','newUser','newPassword'].forEach(id => document.getElementById(id).value = '');
-        document.getElementById('newIsPrimary').checked = false;
+});
+
+// ── Global helpers used by the databases tab partial ───────────
+//
+// IMPORTANT: when a tab partial is injected via innerHTML, any <script>
+// tags inside it do NOT execute. So the data and the renderer must live
+// here in the shell, not in the partial. The partial exposes the server
+// list as a data-servers attribute on the #serverList container; we
+// parse it here and render.
+
+window.renderServers = function() {
+    const serverList = document.getElementById('serverList');
+    if (!serverList) return;
+    // Read the data-servers attribute (set by the partial).
+    let initial = [];
+    try {
+        const raw = serverList.getAttribute('data-servers') || '[]';
+        initial = JSON.parse(raw) || [];
+    } catch (_) { initial = []; }
+    window.servers = initial.map(s => Object.assign(
+        { sync_to_kafka: false, disabled: false, has_password: false }, s));
+
+    if (!window.servers.length) {
+        serverList.innerHTML = '<div class="form-hint">No servers configured. Click "+ Add server" to add one.</div>';
+        return;
     }
-    function addServer() {
-        const server = document.getElementById('newServer').value.trim();
-        const db     = document.getElementById('newDb').value.trim();
-        const user   = document.getElementById('newUser').value.trim();
-        const pw     = document.getElementById('newPassword').value;
-        const isP    = document.getElementById('newIsPrimary').checked;
-        if (!server || !db || !user) { alert('Server, database, and username are required.'); return; }
-        if (isP) servers.forEach(s => s.isPrimary = false);
-        servers.push({ server, db, user, password: pw, isPrimary: isP });
-        hideAddServerForm();
-        renderServers();
-    }
-    function removeServer(i) {
-        if (!confirm('Remove this server?')) return;
-        servers.splice(i, 1);
-        renderServers();
-    }
-    document.addEventListener('DOMContentLoaded', renderServers);
+    serverList.innerHTML = window.servers.map((s, i) => {
+        const disabled = s.disabled === true;
+        const stateBadge = disabled
+            ? '<span class="badge" style="background:#fee2e2; color:#991b1b; font-family:var(--font-mono);">disabled</span>'
+            : '<span class="badge" style="background:#dcfce7; color:#166534; font-family:var(--font-mono);">active</span>';
+        const primaryBadge = s.isPrimary
+            ? '<span class="badge" style="background:#dcfce7; color:#166534; font-family:var(--font-mono);">primary</span>'
+            : '<span class="badge" style="background:var(--surface-2); color:var(--on-surface-muted); font-family:var(--font-mono);">secondary</span>';
+        const kafkaOnOff = s.sync_to_kafka ? 'on' : 'off';
+        const portSuffix = s.port && s.port !== '1433' && s.port !== 1433 ? ':' + s.port : '';
+        const serverKey = s.server + portSuffix;
+
+        const actions = `
+            <button type="button" class="btn btn-secondary" onclick="openEdit(${i})" style="padding:4px 10px; font-size:12px;">Edit</button>
+            <form data-ajax-form action="/settings/server-disable" method="POST" style="display:inline; margin:0;">
+                <input type="hidden" name="server_ip" value="${serverKey}">
+                <input type="hidden" name="disabled" value="${disabled ? 'false' : 'true'}">
+                <input type="hidden" name="tab" value="databases">
+                <button type="submit" class="btn ${disabled ? 'btn-primary' : 'btn-secondary'}" style="padding:4px 10px; font-size:12px;">
+                    ${disabled ? 'Enable' : 'Disable'}
+                </button>
+            </form>`;
+
+        return `
+        <div class="panel" style="margin-bottom:8px; padding:12px; ${disabled ? 'opacity:0.55;' : ''}">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-weight:600;">
+                        <code>${serverKey}</code> ${primaryBadge} ${stateBadge}
+                    </div>
+                    <div class="form-hint">${s.db} · ${s.user} · ${s.has_password ? '•••••• (set)' : 'no password'} · Kafka: ${kafkaOnOff}</div>
+                </div>
+                <div style="display:flex; gap:6px;">${actions}</div>
+            </div>
+        </div>`;
+    }).join('');
+};
+
+window.openEdit = function(i) {
+    const s = window.servers && window.servers[i];
+    if (!s) return;
+    const portSuffix = s.port && s.port !== '1433' && s.port !== 1433 ? ':' + s.port : '';
+    document.getElementById('editServerOriginalIp').value = s.server + portSuffix;
+    document.getElementById('editServerField').value = s.server || '';
+    document.getElementById('editPortField').value = s.port || '1433';
+    document.getElementById('editDbField').value = s.db || '';
+    document.getElementById('editUserField').value = s.user || '';
+    document.getElementById('editPasswordField').value = '';
+    document.getElementById('editServerDialog').showModal();
+};
+
+window.showAddServerForm = function() {
+    const af = document.getElementById('addServerForm');
+    if (af) af.style.display = 'block';
+};
+
+window.hideAddServerForm = function() {
+    const af = document.getElementById('addServerForm');
+    if (af) af.style.display = 'none';
+    ['newServer','newDb','newUser','newPassword','newPort'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    const ip = document.getElementById('newIsPrimary'); if (ip) ip.checked = false;
+    const sk = document.getElementById('newSyncToKafka'); if (sk) sk.checked = false;
+};
+
+// init_<tab>_tab hooks — called by loadSettingsTab after the partial HTML
+// has been injected. Add a new init_<tab>_tab function to wire up tab-specific
+// JS that can't be put in <script> tags (since innerHTML doesn't run them).
+window.init_databases_tab = function() {
+    if (typeof window.renderServers === 'function') window.renderServers();
+};
+
+// ── Initial load ───────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get('tab');
+    loadSettingsTab(SETTINGS_TABS.includes(t) ? t : 'general');
+});
 </script>
 {% endblock %}

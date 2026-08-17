@@ -53,6 +53,10 @@ def init_settings_db() -> None:
     Creates the ApplicationSettings and Environments tables if they don't exist.
     Seeds the Environments table with the canonical Dev/Test/Uat/Prod rows.
     Also creates the ClrColumnOverrides table for CLR column cast overrides.
+
+    NOTE: All config (refresh frequency, ignored tables, Kafka brokers,
+    server lists, per-database sync_to_kafka, CLR overrides) lives in this
+    SQLite DB. There is no .env fallback — every config is read from here.
     """
     conn = get_connection()
     try:
@@ -70,9 +74,23 @@ def init_settings_db() -> None:
                 value VARCHAR NOT NULL UNIQUE,
                 kafka_brokers VARCHAR,
                 kafka_clustered VARCHAR NOT NULL DEFAULT 'false',
+                sync_to_kafka VARCHAR NOT NULL DEFAULT 'false',
                 settings_json VARCHAR NOT NULL DEFAULT '{}'
             )
         ''')
+
+        # Migrations for older DBs that pre-date some columns.
+        migrations = [
+            ("ALTER TABLE Environments ADD COLUMN kafka_brokers VARCHAR",                None),
+            ("ALTER TABLE Environments ADD COLUMN kafka_clustered VARCHAR NOT NULL DEFAULT 'false'", None),
+            ("ALTER TABLE Environments ADD COLUMN sync_to_kafka VARCHAR NOT NULL DEFAULT 'false'", None),
+        ]
+        for stmt, _ in migrations:
+            try:
+                cursor.execute(stmt)
+            except sqlite3.OperationalError:
+                # Column already exists — ignore.
+                pass
 
         # Seed canonical envs (idempotent – only inserts missing rows)
         for display_name, value, clustered in ENVIRONMENT_DEFAULTS:
@@ -83,9 +101,9 @@ def init_settings_db() -> None:
             if cursor.fetchone() is None:
                 cursor.execute(
                     '''INSERT INTO Environments
-                       (display_name, value, kafka_brokers, kafka_clustered, settings_json)
-                       VALUES (?, ?, ?, ?, ?)''',
-                    (display_name, value, '', 'true' if clustered else 'false', '{}')
+                       (display_name, value, kafka_brokers, kafka_clustered, sync_to_kafka, settings_json)
+                       VALUES (?, ?, ?, ?, ?, ?)''',
+                    (display_name, value, '', 'true' if clustered else 'false', 'false', '{}')
                 )
 
         conn.commit()
@@ -103,14 +121,15 @@ def init_settings_db() -> None:
 def list_environments() -> List[Dict[str, Any]]:
     """Return all environments ordered by canonical display order.
 
-    Each row: display_name, value, kafka_brokers, kafka_clustered, settings
+    Each row: display_name, value, kafka_brokers, kafka_clustered, sync_to_kafka, settings
     """
     order = {dn: i for i, (dn, _, _) in enumerate(ENVIRONMENT_DEFAULTS)}
     conn = get_connection()
     try:
         cursor = conn.cursor()
         cursor.execute(
-            'SELECT display_name, value, kafka_brokers, kafka_clustered, settings_json '
+            'SELECT display_name, value, kafka_brokers, kafka_clustered, '
+            'sync_to_kafka, settings_json '
             'FROM Environments'
         )
         rows = cursor.fetchall()
@@ -124,10 +143,11 @@ def list_environments() -> List[Dict[str, Any]]:
         except json.JSONDecodeError:
             settings = {}
         out.append({
-            'display_name': r['display_name'],
-            'value':        r['value'],
-            'kafka_brokers': r['kafka_brokers'] or '',
+            'display_name':   r['display_name'],
+            'value':          r['value'],
+            'kafka_brokers':  r['kafka_brokers'] or '',
             'kafka_clustered': (r['kafka_clustered'] or '').lower() == 'true',
+            'sync_to_kafka':  (r['sync_to_kafka']  or '').lower() == 'true',
             'settings': settings,
         })
     out.sort(key=lambda e: order.get(e['display_name'], 999))
@@ -140,7 +160,8 @@ def get_environment(value: str) -> Optional[Dict[str, Any]]:
     try:
         cursor = conn.cursor()
         cursor.execute(
-            'SELECT display_name, value, kafka_brokers, kafka_clustered, settings_json '
+            'SELECT display_name, value, kafka_brokers, kafka_clustered, '
+            'sync_to_kafka, settings_json '
             'FROM Environments WHERE value = ?',
             (value.lower(),)
         )
@@ -154,10 +175,11 @@ def get_environment(value: str) -> Optional[Dict[str, Any]]:
     except json.JSONDecodeError:
         settings = {}
     return {
-        'display_name': r['display_name'],
-        'value':        r['value'],
-        'kafka_brokers': r['kafka_brokers'] or '',
+        'display_name':   r['display_name'],
+        'value':          r['value'],
+        'kafka_brokers':  r['kafka_brokers'] or '',
         'kafka_clustered': (r['kafka_clustered'] or '').lower() == 'true',
+        'sync_to_kafka':  (r['sync_to_kafka']  or '').lower() == 'true',
         'settings': settings,
     }
 
@@ -166,9 +188,16 @@ def update_environment(
     value: str,
     kafka_brokers: str = '',
     kafka_clustered: bool = False,
+    sync_to_kafka: bool = False,
     settings: Optional[Dict[str, Any]] = None,
 ) -> bool:
-    """Persist per-environment config. Updates brokers / clustered / settings blob."""
+    """Persist per-environment config. Updates brokers / clustered / settings blob.
+
+    Note: ``sync_to_kafka`` is now a **per-database (per-server)** setting that
+    lives inside the env's ``settings.servers`` list — not on the env row itself.
+    The parameter is kept here for backward compatibility with callers, but is
+    no longer persisted to the env row.
+    """
     conn = get_connection()
     try:
         cursor = conn.cursor()
@@ -203,6 +232,396 @@ def get_active_environment() -> Optional[Dict[str, Any]]:
 def set_active_environment(value: str) -> bool:
     """Record which env the user chose at startup."""
     return set_setting('ACTIVE_ENVIRONMENT', value.lower(), 'STRING')
+
+
+def seed_legacy_servers_into_envs() -> None:
+    """
+    One-time bootstrap: for every environment that doesn't already have
+    servers in its ``settings.servers`` list, populate from the hard-coded
+    ``PER_ENV_SERVERS`` table below.
+
+    After this runs, each env owns its own server list (and the
+    per-database ``sync_to_kafka`` toggle). There is no .env fallback for
+    server config — it's all stored here.
+    """
+    # Per-env server overrides. Each env that doesn't appear here falls back
+    # to the legacy ``DEFAULT_SERVERS`` cluster (the dev/test/prod setup).
+    PER_ENV_SERVERS = {
+        'uat': [
+            {
+                'server': '10.10.98.26', 'port': '31812',
+                'user': 'sa', 'password': 'P@ssw0rd@123',
+                'db': 'NitaraDB', 'isPrimary': True,
+            },
+            {
+                'server': '10.10.98.26', 'port': '31813',
+                'user': 'sa', 'password': 'P@ssw0rd@123',
+                'db': 'NitaraDB', 'isPrimary': False,
+            },
+        ],
+        'dev': [
+            {
+                'server': '10.10.98.47', 'port': '1433',
+                'user': 'sa', 'password': 't5!bT5AZ5Q@coqZ',
+                'db': 'NitaraDB', 'isPrimary': True,
+            },
+            {
+                'server': '10.10.98.66', 'port': '1433',
+                'user': 'sa', 'password': 'Gt(#@987HaS',
+                'db': 'NitaraDB', 'isPrimary': False,
+            },
+            {
+                'server': '10.10.98.76', 'port': '1433',
+                'user': 'sa', 'password': 'Gt(#@987RTGF',
+                'db': 'NitaraDB', 'isPrimary': False,
+            },
+            {
+                'server': '10.10.98.100', 'port': '1433',
+                'user': 'sa', 'password': 'P@ssw0rd@123',
+                'db': 'NitaraDB', 'isPrimary': False,
+            },
+        ],
+        'test': [
+            {
+                'server': '10.10.98.47', 'port': '1433',
+                'user': 'sa', 'password': 't5!bT5AZ5Q@coqZ',
+                'db': 'NitaraDB', 'isPrimary': True,
+            },
+            {
+                'server': '10.10.98.66', 'port': '1433',
+                'user': 'sa', 'password': 'Gt(#@987HaS',
+                'db': 'NitaraDB', 'isPrimary': False,
+            },
+            {
+                'server': '10.10.98.76', 'port': '1433',
+                'user': 'sa', 'password': 'Gt(#@987RTGF',
+                'db': 'NitaraDB', 'isPrimary': False,
+            },
+            {
+                'server': '10.10.98.100', 'port': '1433',
+                'user': 'sa', 'password': 'P@ssw0rd@123',
+                'db': 'NitaraDB', 'isPrimary': False,
+            },
+        ],
+        'prod': [
+            {
+                'server': '10.10.98.47', 'port': '1433',
+                'user': 'sa', 'password': 't5!bT5AZ5Q@coqZ',
+                'db': 'NitaraDB', 'isPrimary': True,
+            },
+            {
+                'server': '10.10.98.66', 'port': '1433',
+                'user': 'sa', 'password': 'Gt(#@987HaS',
+                'db': 'NitaraDB', 'isPrimary': False,
+            },
+            {
+                'server': '10.10.98.76', 'port': '1433',
+                'user': 'sa', 'password': 'Gt(#@987RTGF',
+                'db': 'NitaraDB', 'isPrimary': False,
+            },
+            {
+                'server': '10.10.98.100', 'port': '1433',
+                'user': 'sa', 'password': 'P@ssw0rd@123',
+                'db': 'NitaraDB', 'isPrimary': False,
+            },
+        ],
+    }
+
+    for env in list_environments():
+        existing = env.get('settings', {}).get('servers', [])
+        if existing:
+            continue  # already populated, don't overwrite
+        source = PER_ENV_SERVERS.get(env['value'], [])
+        copied = []
+        for s in source:
+            is_primary = bool(s.get('isPrimary', False))
+            copied.append({
+                'server':       s.get('server', ''),
+                'user':         s.get('user', ''),
+                'password':     s.get('password', '') or '',
+                'db':           s.get('db', 'NitaraDB'),
+                'port':         s.get('port', '1433') or '1433',
+                'isPrimary':    is_primary,
+                # Primary servers can NEVER publish Kafka backlog.
+                'sync_to_kafka': False if is_primary else False,
+                'disabled':     False,
+            })
+        new_settings = dict(env.get('settings') or {})
+        new_settings['servers'] = copied
+        update_environment(
+            env['value'],
+            kafka_brokers=env['kafka_brokers'],
+            kafka_clustered=env['kafka_clustered'],
+            settings=new_settings,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Per-server (per-database) settings helpers
+# ---------------------------------------------------------------------------
+# Each server entry stored in environments[*].settings.servers has this shape:
+#   {
+#       'server':       '10.10.98.76',
+#       'user':         'sa',
+#       'password':     '...',
+#       'db':           'NitaraDB',
+#       'port':         '1433',
+#       'isPrimary':    False,
+#       'sync_to_kafka': True/False,        ← per-database toggle
+#   }
+
+
+def _normalize_server(server: Dict[str, Any]) -> Dict[str, Any]:
+    """Ensure a server dict has all the required fields with sensible defaults."""
+    out = {
+        'server':       server.get('server', ''),
+        'user':         server.get('user', ''),
+        'password':     server.get('password', '') or '',
+        'db':           server.get('db', 'NitaraDB'),
+        'port':         server.get('port', '1433') or '1433',
+        'isPrimary':    bool(server.get('isPrimary', False)),
+        'sync_to_kafka': bool(server.get('sync_to_kafka', False)),
+        'disabled':     bool(server.get('disabled', False)),
+    }
+    return out
+
+
+def add_server(env_value: str, server: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Append a new server to the env's settings.servers list.
+
+    Rules:
+      - Keys are (server, port). Adding an entry that already exists by
+        that key returns ``{'status': 'duplicate'}`` and does not modify
+        the list.
+      - If the new entry is primary, every existing entry is demoted to
+        secondary (and any sync_to_kafka flag is cleared) — there is at
+        most one primary per env.
+      - Returns ``{'status': 'ok', 'server': <normalized_server_dict>}``
+        on success.
+
+    The caller is responsible for surfacing the result to the UI.
+    """
+    env = get_environment(env_value)
+    if not env:
+        return {'status': 'error', 'message': f"env {env_value!r} not found"}
+    settings = env.get('settings') or {}
+    servers = settings.get('servers', []) or []
+
+    new_server = _normalize_server({
+        'server':        server.get('server', ''),
+        'user':          server.get('user', ''),
+        'password':      server.get('password', '') or '',
+        'db':            server.get('db', 'NitaraDB'),
+        'port':          server.get('port', '1433') or '1433',
+        'isPrimary':     bool(server.get('isPrimary', False)),
+        'sync_to_kafka': bool(server.get('sync_to_kafka', False)),
+        'disabled':      False,
+    })
+
+    new_key = new_server['server'] + ':' + new_server['port']
+    for s in servers:
+        sp = s.get('server', '') + ':' + (s.get('port', '1433') or '1433')
+        if sp == new_key:
+            return {'status': 'duplicate', 'message': f"server {new_key} already exists", 'key': new_key}
+
+    if new_server['isPrimary']:
+        for s in servers:
+            s['isPrimary'] = False
+            s['sync_to_kafka'] = False
+
+    servers.append(new_server)
+    settings['servers'] = servers
+
+    ok = update_environment(
+        env_value,
+        kafka_brokers=env['kafka_brokers'],
+        kafka_clustered=env['kafka_clustered'],
+        settings=settings,
+    )
+    if not ok:
+        return {'status': 'error', 'message': 'failed to persist new server'}
+    return {'status': 'ok', 'server': new_server}
+
+
+def update_general_settings(env_value: str, **fields) -> bool:
+    """
+    Update the per-env non-server settings (refresh_frequency, notified_emails,
+    ignore_tables). Pass only the fields you want to change; other fields
+    in the env's settings blob are preserved.
+
+    Recognised fields: refresh_frequency (int), notified_emails (str),
+    ignore_tables (list[str]).
+
+    SAFETY: this function MUST NOT touch ``settings.servers``. It only
+    modifies the three keys listed above. Even if the env's settings blob
+    is unexpectedly empty (``{}``), we preserve whatever is there.
+    """
+    env = get_environment(env_value)
+    if not env:
+        return False
+    settings = dict(env.get('settings') or {})  # shallow copy — do not mutate env
+    for k in ('refresh_frequency', 'notified_emails', 'ignore_tables'):
+        if k in fields:
+            settings[k] = fields[k]
+    # Defensive: never let a partial update WIPE the servers list. If for
+    # any reason the stored settings is empty, fall back to the env's
+    # current servers (re-read from DB to be safe).
+    if 'servers' not in settings:
+        settings['servers'] = (env.get('settings') or {}).get('servers', [])
+    return update_environment(
+        env_value,
+        kafka_brokers=env['kafka_brokers'],
+        kafka_clustered=env['kafka_clustered'],
+        settings=settings,
+    )
+
+
+def update_kafka_brokers(env_value: str, brokers: str, clustered: bool) -> bool:
+    """
+    Update the per-env Kafka broker list + clustered flag.
+
+    SAFETY: this function MUST NOT touch ``settings.servers`` or any other
+    field in the env's settings blob. It only modifies the two top-level
+    ``Environments`` columns (kafka_brokers, kafka_clustered). The settings
+    blob is re-read fresh from the DB and written back unchanged, with
+    an explicit guard against accidentally overwriting it with ``{}``.
+    """
+    env = get_environment(env_value)
+    if not env:
+        return False
+    settings = dict(env.get('settings') or {})  # shallow copy — do not mutate env
+    # Defensive: if the stored settings is empty for any reason, keep
+    # the servers list (re-read from DB). This prevents a future bug from
+    # silently wiping settings.servers on a broker save.
+    if 'servers' not in settings:
+        settings['servers'] = (env.get('settings') or {}).get('servers', [])
+    return update_environment(
+        env_value,
+        kafka_brokers=(brokers or '').strip(),
+        kafka_clustered=bool(clustered),
+        settings=settings,
+    )
+
+
+def get_servers(env_value: str) -> List[Dict[str, Any]]:
+    """Return the (normalized) list of servers for the given environment."""
+    env = get_environment(env_value)
+    if not env:
+        return []
+    raw = env.get('settings', {}).get('servers', [])
+    return [_normalize_server(s) for s in raw]
+
+
+def set_server_sync_to_kafka(env_value: str, server_ip: str, enabled: bool) -> bool:
+    """Toggle the sync_to_kafka flag on a single server entry.
+
+    The ``server_ip`` argument may be either a plain IP ("10.10.98.76") or
+    an IP+port ("10.10.98.26:31813"). UAT has two servers on the same IP
+    with different ports, so we match on the full ``server:port`` key.
+
+    Rules:
+      - Primary servers can NEVER have sync_to_kafka (only secondaries publish
+        Kafka backlog). The call is rejected for primaries.
+      - At most ONE secondary per env may have sync_to_kafka=True. If the user
+        enables it for server X, any other secondary that was on gets cleared.
+
+    Returns True if a matching (secondary) server was found and updated.
+    """
+    env = get_environment(env_value)
+    if not env:
+        return False
+    servers = env.get('settings', {}).get('servers', [])
+    target = None
+    for s in servers:
+        # Match by full server:port key (so UAT's 31812 / 31813 are distinct).
+        sp = s.get('server', '') + ':' + (s.get('port', '1433') or '1433')
+        if sp == server_ip:
+            target = s
+            break
+    if not target:
+        return False
+    if target.get('isPrimary'):
+        return False  # never allow Kafka publish on primary
+
+    if enabled:
+        # Clear sync_to_kafka on every OTHER secondary.
+        for s in servers:
+            if s is target:
+                continue
+            if not s.get('isPrimary'):
+                s['sync_to_kafka'] = False
+        target['sync_to_kafka'] = True
+    else:
+        target['sync_to_kafka'] = False
+
+    return update_environment(
+        env_value,
+        kafka_brokers=env['kafka_brokers'],
+        kafka_clustered=env['kafka_clustered'],
+        settings=env.get('settings') or {},
+    )
+
+
+def set_server_disabled(env_value: str, server_ip: str, disabled: bool) -> bool:
+    """Soft-disable a server so it's skipped by sync ops but kept in the list.
+
+    ``server_ip`` may be a plain IP or ``server:port`` (UAT-style).
+    """
+    env = get_environment(env_value)
+    if not env:
+        return False
+    servers = env.get('settings', {}).get('servers', [])
+    changed = False
+    for s in servers:
+        sp = s.get('server', '') + ':' + (s.get('port', '1433') or '1433')
+        if sp == server_ip:
+            s['disabled'] = bool(disabled)
+            changed = True
+            break
+    if not changed:
+        return False
+    return update_environment(
+        env_value,
+        kafka_brokers=env['kafka_brokers'],
+        kafka_clustered=env['kafka_clustered'],
+        settings=env.get('settings') or {},
+    )
+
+
+def update_server(env_value: str, server_ip: str, **fields) -> bool:
+    """Update fields on a server entry (e.g. user, password, db, port).
+
+    ``server_ip`` may be a plain IP or ``server:port`` (UAT-style).
+    The ``server`` key in ``fields`` (if present) is the new server identity;
+    we locate the existing server by the OLD ``server_ip`` parameter.
+
+    Rule: marking a server primary automatically clears its ``sync_to_kafka``
+    flag, since primary servers never publish to Kafka.
+    """
+    env = get_environment(env_value)
+    if not env:
+        return False
+    servers = env.get('settings', {}).get('servers', [])
+    changed = False
+    for s in servers:
+        sp = s.get('server', '') + ':' + (s.get('port', '1433') or '1433')
+        if sp == server_ip:
+            for k, v in fields.items():
+                s[k] = v
+            # If just promoted to primary, force-clear sync_to_kafka.
+            if s.get('isPrimary'):
+                s['sync_to_kafka'] = False
+            changed = True
+            break
+    if not changed:
+        return False
+    return update_environment(
+        env_value,
+        kafka_brokers=env['kafka_brokers'],
+        kafka_clustered=env['kafka_clustered'],
+        settings=env.get('settings') or {},
+    )
 
 
 def get_setting(key: str) -> Optional[dict]:
@@ -285,7 +704,11 @@ def migrate_legacy_settings(legacy_overrides: Optional[Dict[str, Any]] = None) -
         return  # Already populated
     if not legacy_overrides:
         return
-    update_environment(env['value'], env['kafka_brokers'], env['kafka_clustered'], legacy_overrides)
+    update_environment(env['value'],
+                       env['kafka_brokers'],
+                       env['kafka_clustered'],
+                       env['sync_to_kafka'],
+                       legacy_overrides)
 
 
 # ---------------------------------------------------------------------------
@@ -485,21 +908,14 @@ def get_setting_parsed(key: str) -> Any:
 
 
 if __name__ == '__main__':
-    # Initialize database
     init_settings_db()
     print("Settings database initialized at:", DB_PATH)
 
-    # Test setting storage
-    test_servers = [
-        {'server': '10.10.98.47', 'user': 'sa', 'password': 't5!bT5AZ5Q@coqZ', 'db': 'NitaraDB', 'isPrimary': True},
-        {'server': '10.10.98.76', 'user': 'sa', 'password': 'Gt(#@987RTGF', 'db': 'NitaraDB', 'isPrimary': False},
-    ]
+    print("Environments:")
+    for env in list_environments():
+        srvs = (env.get('settings') or {}).get('servers', [])
+        print(f"  {env['value']:6s} | kafka_brokers={env['kafka_brokers'][:30]!r:30s} | servers={len(srvs)}")
 
-    set_setting('SERVERS', test_servers, 'JSON')
-    print("Set SERVERS setting")
-
-    servers = get_setting_parsed('SERVERS')
-    print("Retrieved SERVERS:", servers)
-
-    all_settings = get_all_settings()
-    print("All settings:", all_settings)
+    print("CLR overrides:")
+    for o in list_clr_overrides():
+        print(f"  {o['table_name']}.{o['column_name']} → {o['cast_as']}")

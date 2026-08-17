@@ -96,7 +96,9 @@ BEGIN
     -- 3. Process PKs in chunks so the OPENQUERY inner string stays under 8000 chars.
     WHILE @Done < @LocalPkCount
     BEGIN
-        DECLARE @ChunkSize INT = 150;  -- ~150 PKs per chunk; tuned to keep OPENQUERY inner string safely under the 8KB limit
+        DECLARE @ChunkSize INT = 100;  -- ~100 PKs per chunk; sized to keep the OPENQUERY inner
+                                       -- string safely under the 8000-char NVARCHAR limit even
+                                       -- for tables with many wide columns (e.g. Farms has 38 cols).
 
         SET @LocalPkList =
             STUFF(

@@ -1,0 +1,122 @@
+<!--
+  Kafka tab — two independent surfaces:
+
+    1. Brokers form: posts to /settings/kafka-brokers-save.
+    2. Per-database sync_to_kafka table: each row's Enable/Disable is a tiny
+       form that posts to /settings/server-sync-toggle. These forms are
+       SIBLINGS of the brokers form (NOT nested inside it) so the browser
+       treats them as separate submissions.
+-->
+
+<!-- ── Brokers form (wraps only the broker fields) ── -->
+<form data-ajax-form action="/settings/kafka-brokers-save" method="POST" id="kafkaBrokersForm">
+    <div class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="panel-eyebrow">Kafka · {{ active_environment.value }}_sync_changes_backlog</div>
+                <div class="panel-title">Kafka brokers for {{ active_environment.display_name }}</div>
+            </div>
+            <div>
+                {% if active_environment.kafka_clustered %}
+                <span class="badge" style="font-family:var(--font-mono);">clustered (3-node)</span>
+                {% else %}
+                <span class="badge" style="font-family:var(--font-mono);">single</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="form-row">
+            <label class="form-label" for="kafka_brokers">Bootstrap servers</label>
+            <input
+                type="text"
+                id="kafka_brokers"
+                name="kafka_brokers"
+                class="input mono"
+                value="{{ active_environment.kafka_brokers or '' }}"
+                placeholder="10.10.98.39:9092                       (single)
+10.10.98.36:9092,10.10.98.37:9092,10.10.98.38:9092   (clustered)"
+            />
+            <div class="form-hint">
+                Comma-separated host:port pairs. The producer connects to all of them —
+                the client handles both single and clustered topologies automatically.
+            </div>
+        </div>
+
+        <div class="form-row">
+            <label class="form-label" style="display:flex; align-items:center; gap:8px;">
+                <input type="checkbox" name="kafka_clustered" value="true" {% if active_environment.kafka_clustered %}checked{% endif %}>
+                Brokers form a Kafka cluster (recommended for {{ 'Prod' if active_environment.display_name == 'Prod' else 'this env — leave off for single broker' }})
+            </label>
+        </div>
+
+        <div style="display:flex; gap:8px; margin-top:8px;">
+            <button type="submit" class="btn btn-primary">Save brokers</button>
+        </div>
+    </div>
+</form>
+
+<!-- ── Per-database sync_to_kafka (separate from brokers form) ── -->
+{% if active_environment.settings.servers %}
+<div class="panel">
+    <div class="panel-head">
+        <div>
+            <div class="panel-eyebrow">Kafka backlog</div>
+            <div class="panel-title">Sync to Kafka backlog — per database</div>
+        </div>
+    </div>
+
+    <div class="form-hint" style="margin-bottom:12px;">
+        Enable Kafka publish <strong>per secondary database</strong>. Only <strong>one secondary per
+        environment</strong> can have sync_to_kafka enabled at a time. Primary servers never
+        publish to Kafka (the toggle is hidden for them). When the DB sync has committed, the
+        diff rows are published to <code>{{ active_environment.value }}_sync_changes_backlog</code>.
+    </div>
+
+    <table class="data-table">
+        <thead><tr>
+            <th>Database server</th>
+            <th>DB</th>
+            <th>Role</th>
+            <th>State</th>
+            <th>Sync to Kafka</th>
+        </tr></thead>
+        <tbody>
+        {% for srv in active_environment.settings.servers %}
+            {% set enabled = srv.sync_to_kafka | default(false) %}
+            {% set is_disabled = srv.disabled | default(false) %}
+            {% set is_primary = srv.isPrimary | default(false) %}
+            <tr {% if is_disabled %}style="opacity:0.45;"{% endif %}>
+                <td><code>{{ srv.server }}{{ ':' ~ srv.port if srv.port and srv.port != '1433' else '' }}</code></td>
+                <td><code>{{ srv.db }}</code></td>
+                <td>
+                    {% if is_primary %}
+                        <span class="badge" style="background:#dcfce7; color:#166534; font-family:var(--font-mono);">primary</span>
+                    {% else %}
+                        <span class="badge" style="background:var(--surface-2); color:var(--on-surface-muted); font-family:var(--font-mono);">secondary</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if is_disabled %}
+                        <span class="badge" style="background:#fee2e2; color:#991b1b; font-family:var(--font-mono);">disabled</span>
+                    {% else %}
+                        <span class="badge" style="background:#dcfce7; color:#166534; font-family:var(--font-mono);">active</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if not is_disabled and not is_primary %}
+                    <form data-ajax-form action="/settings/server-sync-toggle" method="POST" style="display:inline; margin:0;">
+                        <input type="hidden" name="server_ip" value="{{ srv.server }}:{{ srv.port or '1433' }}">
+                        <input type="hidden" name="enabled" value="{{ 'false' if enabled else 'true' }}">
+                        <input type="hidden" name="tab" value="kafka">
+                        <button type="submit" class="btn {{ 'btn-secondary' if enabled else 'btn-primary' }}" style="padding:4px 10px; font-size:12px;">
+                            {% if enabled %}Disable{% else %}Enable{% endif %}
+                        </button>
+                    </form>
+                    {% else %}<span class="form-hint">{% if is_primary %}primary — n/a{% else %}—{% endif %}</span>{% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}

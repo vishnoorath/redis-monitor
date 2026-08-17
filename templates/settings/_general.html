@@ -1,0 +1,36 @@
+<!--
+  General tab — application settings (refresh frequency, notified emails, ignore tables).
+  This is one self-contained form that posts to /settings/general-save.
+-->
+<form data-ajax-form action="/settings/general-save" method="POST" id="generalForm">
+    <div class="panel">
+        <div class="panel-head">
+            <div class="panel-title">Application settings for {{ active_environment.display_name }}</div>
+        </div>
+
+        <div class="form-grid-2">
+            <div class="form-row">
+                <label class="form-label" for="refresh_frequency">Refresh frequency (seconds)</label>
+                <input type="number" id="refresh_frequency" name="refresh_frequency"
+                       class="input" min="10" max="300" step="5"
+                       value="{{ active_environment.settings.refresh_frequency | default(30) }}" />
+            </div>
+            <div class="form-row">
+                <label class="form-label" for="notified_emails">Notified emails (one per line)</label>
+                <textarea id="notified_emails" name="notified_emails" class="textarea"
+                          placeholder="admin@example.com&#10;support@example.com">{{ active_environment.settings.notified_emails | default('', true) }}</textarea>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <label class="form-label" for="ignore_tables">Ignore tables (one per line)</label>
+            <textarea id="ignore_tables" name="ignore_tables" class="textarea"
+                      placeholder="tbl_Msg91SmSFailureCallbackLog&#10;tbl_MessageLangVariant">{{ active_environment.settings.ignore_tables | default('', true) }}</textarea>
+            <div class="form-hint">Tables to exclude from SQL replication difference monitoring.</div>
+        </div>
+
+        <div style="display:flex; gap:8px; margin-top:8px;">
+            <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+    </div>
+</form>

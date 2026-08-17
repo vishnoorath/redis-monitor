@@ -3,7 +3,7 @@ Flask Application for Redis Monitor.
 Provides REST API endpoints and a web UI for farm metadata comparison monitoring.
 """
 
-from flask import Flask, request, jsonify, render_template, redirect, url_for
+from flask import Flask, request, jsonify, render_template, redirect, url_for, make_response
 from datetime import datetime
 import sys
 from pathlib import Path
@@ -21,6 +21,10 @@ from src.html_reporter import HTMLReporter
 from src.sql import get_recent_farm_ids
 from src.replication_monitor import get_replication_status, ReplicationMonitor
 from src import settings_db
+
+
+# Valid settings tabs (also used by the per-tab GET endpoint below)
+SETTINGS_TABS = ('general', 'kafka', 'databases', 'clr')
 
 
 # Initialize Flask app
@@ -47,41 +51,11 @@ Config.ensure_output_dir()
 settings_db.init_settings_db()
 
 
-def _migrate_dotenv_into_db() -> None:
-    """
-    Seed each environment's Kafka brokers from the legacy .env KAFKA_BROKER,
-    if and only if that env's brokers field is still empty. Idempotent —
-    once a user has saved brokers via the settings page, this won't overwrite.
-
-    For envs that the .env explicitly names (KAFKA_ENV), the brokers go only
-    to that env. Other envs stay empty until the user fills them in via the
-    Settings page.
-    """
-    legacy_brokers = (os.getenv('KAFKA_BROKER') or '').strip()
-    legacy_env     = (os.getenv('KAFKA_ENV') or '').strip().lower()
-
-    if not legacy_brokers:
-        return
-
-    # If the .env specifies a particular env, only seed that one.
-    target_values = {legacy_env} if legacy_env else set()
-    # Otherwise seed ALL envs whose brokers are empty so the user has
-    # something to start from. They'll override per-env as needed.
-    for env in settings_db.list_environments():
-        if target_values and env['value'] not in target_values:
-            continue
-        if env['kafka_brokers']:
-            continue  # user already configured
-        settings_db.update_environment(
-            env['value'],
-            kafka_brokers=legacy_brokers,
-            kafka_clustered=env['kafka_clustered'],
-            settings=env.get('settings') or {},
-        )
-
-# Bring in `os` for the dotenv migration above
-import os
-_migrate_dotenv_into_db()
+# One-time bootstrap: seed each env's settings.servers list (per-env
+# PER_ENV_SERVERS overrides in settings_db.py — UAT has a different cluster
+# than dev/test/prod). Every config is sourced from settings.db; there are
+# no .env fallbacks for the database layer.
+settings_db.seed_legacy_servers_into_envs()
 
 
 # ---------------------------------------------------------------------------
@@ -109,8 +83,48 @@ def _resolve_active_environment():
 
 @app.context_processor
 def inject_environment():
-    """Make `active_environment` available to every Jinja template."""
-    return {'active_environment': _resolve_active_environment()}
+    """Make `active_environment` and `all_environments` available to every Jinja template."""
+    active = _resolve_active_environment()
+    all_envs = settings_db.list_environments()
+
+    # Strip passwords before exposing server lists to templates so the
+    # browser never sees credentials. Passwords are only updated via the
+    # dedicated Edit dialog (which posts them back to the server).
+    def _safe_servers(env):
+        srvs = (env.get('settings') or {}).get('servers', [])
+        safe = []
+        for s in srvs:
+            safe.append({
+                'server':       s.get('server', ''),
+                'user':         s.get('user', ''),
+                'db':           s.get('db', 'NitaraDB'),
+                'port':         s.get('port', '1433') or '1433',
+                'isPrimary':    bool(s.get('isPrimary', False)),
+                'sync_to_kafka': bool(s.get('sync_to_kafka', False)),
+                'disabled':     bool(s.get('disabled', False)),
+                'has_password': bool(s.get('password', '') or ''),
+            })
+        return safe
+
+    # Compute warning flags for the top-bar env switcher so users can see
+    # which envs are missing critical config (kafka brokers, primary DB,
+    # any secondary DB).
+    for env in all_envs:
+        servers = _safe_servers(env)
+        env['_warning'] = (
+            not env.get('kafka_brokers') or
+            not any(s.get('isPrimary') for s in servers) or
+            not any((not s.get('isPrimary')) and not s.get('disabled') for s in servers)
+        )
+        env['_safe_servers'] = servers
+
+    if active:
+        active['_safe_servers'] = _safe_servers(active)
+
+    return {
+        'active_environment': active,
+        'all_environments':    all_envs,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -553,6 +567,8 @@ def sync_tables():
 
         # Import and call the sync function.
         # Kafka brokers/env come from the currently active environment.
+        # sync_to_kafka is now PER-DATABASE — looked up from the target server's
+        # entry in the env's settings.servers list.
         from src.replication_monitor import sync_tables_to_secondary
 
         active = _resolve_active_environment()
@@ -560,12 +576,43 @@ def sync_tables():
         kafka_env       = active.get('value') if active else None
         kafka_clustered = active.get('kafka_clustered') if active else None
 
+        # Find the target server's sync_to_kafka flag from the env's servers list.
+        # Disabled servers are skipped from sync entirely.
+        sync_to_kafka = False
+        server_disabled = False
+        if active:
+            for srv in (active.get('settings') or {}).get('servers', []):
+                if srv.get('server') == server:
+                    server_disabled = bool(srv.get('disabled', False))
+                    if not server_disabled:
+                        sync_to_kafka = bool(srv.get('sync_to_kafka', False))
+                    break
+
+        if server_disabled:
+            return {
+                'status': 'success',
+                'server': server,
+                'table_count': len(tables),
+                'results': [
+                    {
+                        'table': t,
+                        'status': 'skipped',
+                        'error': 'server is disabled in settings',
+                        'kafka_published': 0,
+                        'sync_to_kafka': False,
+                        'missing_rows': 0,
+                        'rows_affected': 0,
+                    } for t in tables
+                ],
+            }
+
         results = sync_tables_to_secondary(
             server,
             tables,
             kafka_brokers=kafka_brokers,
             kafka_env=kafka_env,
             kafka_clustered=kafka_clustered,
+            sync_to_kafka=sync_to_kafka,
         )
 
         return jsonify(results), 200
@@ -617,12 +664,19 @@ def select_environment():
     """
     On startup, force the user to pick Dev / Test / Uat / Prod.
     Persists the choice in settings.db → ACTIVE_ENVIRONMENT.
+    On POST: switch env, then redirect back to wherever the user came from
+    (defaults to the dashboard if no next is provided).
     """
     if request.method == 'POST':
         chosen = (request.form.get('env') or '').strip().lower()
         env = settings_db.get_environment(chosen)
         if env:
             settings_db.set_active_environment(chosen)
+            # Honor an explicit `next` (only for same-app paths so we don't
+            # open-redirect to malicious hosts). Otherwise fall back to dashboard.
+            next_url = (request.form.get('next') or '').strip()
+            if next_url.startswith('/') and not next_url.startswith('//'):
+                return redirect(next_url)
             return redirect(url_for('dashboard'))
         # Invalid choice — fall through and re-render selector
 
@@ -656,7 +710,7 @@ def sql_status():
 
 @app.route('/settings/clr/add', methods=['POST'])
 def clr_add():
-    """Add or update a CLR column override in settings.db."""
+    """Add or update a CLR column override in settings.db. Returns JSON."""
     table_name = (request.form.get('table_name') or '').strip()
     column_name = (request.form.get('column_name') or '').strip()
     cast_as = (request.form.get('cast_as') or 'NVARCHAR(MAX)').strip()
@@ -664,95 +718,241 @@ def clr_add():
     if not table_name or not column_name:
         return jsonify({'status': 'error', 'message': 'table_name and column_name are required'}), 400
     settings_db.upsert_clr_override(table_name, column_name, cast_as, notes)
-    return redirect(url_for('settings'))
+    return jsonify({'status': 'success', 'message': f'CLR override for {table_name}.{column_name} saved.'})
 
 
 @app.route('/settings/clr/delete', methods=['POST'])
 def clr_delete():
-    """Remove a CLR column override."""
+    """Remove a CLR column override. Returns JSON."""
     table_name = (request.form.get('table_name') or '').strip()
     column_name = (request.form.get('column_name') or '').strip()
     if not table_name or not column_name:
         return jsonify({'status': 'error', 'message': 'table_name and column_name are required'}), 400
     settings_db.delete_clr_override(table_name, column_name)
-    return redirect(url_for('settings'))
+    return jsonify({'status': 'success', 'message': f'CLR override for {table_name}.{column_name} removed.'})
 
 
-@app.route('/settings', methods=['GET', 'POST'])
+@app.route('/settings/sync-toggle', methods=['POST'])
+def sync_toggle():
+    """Toggle the per-environment 'sync to Kafka' setting. Returns JSON."""
+    active = _resolve_active_environment()
+    if not active:
+        return jsonify({'status': 'error', 'message': 'no active environment'}), 400
+    new_value = (request.form.get('enabled') or '').lower() in ('1', 'true', 'yes', 'on')
+    settings_db.update_environment(
+        active['value'],
+        kafka_brokers=active['kafka_brokers'],
+        kafka_clustered=active['kafka_clustered'],
+        sync_to_kafka=new_value,
+        settings=active.get('settings') or {},
+    )
+    return jsonify({'status': 'success', 'message': f'Sync-to-Kafka {"enabled" if new_value else "disabled"} for {active["display_name"]}.'})
+
+
+@app.route('/settings/server-sync-toggle', methods=['POST'])
+def server_sync_toggle():
+    """Toggle the per-database (per-server) 'sync to Kafka' setting. Returns JSON."""
+    active = _resolve_active_environment()
+    if not active:
+        return jsonify({'status': 'error', 'message': 'no active environment'}), 400
+    server_ip = (request.form.get('server_ip') or '').strip()
+    if not server_ip:
+        return jsonify({'status': 'error', 'message': 'server_ip required'}), 400
+    new_value = (request.form.get('enabled') or '').lower() in ('1', 'true', 'yes', 'on')
+    ok = settings_db.set_server_sync_to_kafka(active['value'], server_ip, new_value)
+    if not ok:
+        return jsonify({
+            'status': 'error',
+            'message': f'server {server_ip} not found in env {active["value"]}',
+        }), 404
+    return jsonify({'status': 'success', 'message': f'Sync-to-Kafka {"enabled" if new_value else "disabled"} for {server_ip}.'})
+
+
+@app.route('/settings/server-disable', methods=['POST'])
+def server_disable():
+    """Soft-disable a server (kept in list but excluded from sync ops). Returns JSON."""
+    active = _resolve_active_environment()
+    if not active:
+        return jsonify({'status': 'error', 'message': 'no active environment'}), 400
+    server_ip = (request.form.get('server_ip') or '').strip()
+    if not server_ip:
+        return jsonify({'status': 'error', 'message': 'server_ip required'}), 400
+    new_value = (request.form.get('disabled') or '').lower() in ('1', 'true', 'yes', 'on')
+    ok = settings_db.set_server_disabled(active['value'], server_ip, new_value)
+    if not ok:
+        return jsonify({
+            'status': 'error',
+            'message': f'server {server_ip} not found in env {active["value"]}',
+        }), 404
+    return jsonify({'status': 'success', 'message': f'Server {server_ip} {"enabled" if not new_value else "disabled"}.'})
+
+
+@app.route('/settings/server-edit', methods=['POST'])
+def server_edit():
+    """Update editable fields on a server entry. Returns JSON."""
+    active = _resolve_active_environment()
+    if not active:
+        return jsonify({'status': 'error', 'message': 'no active environment'}), 400
+    server_ip = (request.form.get('server_ip') or '').strip()
+    if not server_ip:
+        return jsonify({'status': 'error', 'message': 'server_ip required'}), 400
+
+    fields = {}
+    for k in ('server', 'user', 'password', 'db', 'port'):
+        v = request.form.get(k)
+        if v is None:
+            continue
+        # Password: blank means "keep current" — skip it so we don't blank
+        # out the stored password. Other fields: blank means "leave as-is" too.
+        if v.strip() == '' and k != 'password':
+            continue
+        # For password, only include if explicitly set (non-blank).
+        if k == 'password' and v == '':
+            continue
+        fields[k] = v.strip() if k != 'password' else v
+    if 'isPrimary' in request.form:
+        fields['isPrimary'] = 'isPrimary' in request.form
+    if not fields:
+        return jsonify({'status': 'error', 'message': 'no fields to update'}), 400
+
+    ok = settings_db.update_server(active['value'], server_ip, **fields)
+    if not ok:
+        return jsonify({
+            'status': 'error',
+            'message': f'server {server_ip} not found in env {active["value"]}',
+        }), 404
+    return jsonify({'status': 'success', 'message': f'Server {server_ip} updated.'})
+
+
+@app.route('/settings/server-add', methods=['POST'])
+def server_add():
+    """Append a new server to the active env's settings.servers. Returns JSON."""
+    active = _resolve_active_environment()
+    if not active:
+        return jsonify({'status': 'error', 'message': 'no active environment'}), 400
+
+    server   = (request.form.get('server') or '').strip()
+    db       = (request.form.get('db') or 'NitaraDB').strip()
+    user     = (request.form.get('user') or '').strip()
+    password = request.form.get('password') or ''
+    port     = (request.form.get('port') or '1433').strip() or '1433'
+    is_primary = 'isPrimary' in request.form
+    sync_to_kafka = 'sync_to_kafka' in request.form
+
+    if not server or not user or not db:
+        return jsonify({'status': 'error', 'message': 'server, db, and user are required'}), 400
+
+    result = settings_db.add_server(
+        active['value'],
+        {
+            'server':        server,
+            'user':          user,
+            'password':      password,
+            'db':            db,
+            'port':          port,
+            'isPrimary':     is_primary,
+            'sync_to_kafka': sync_to_kafka,
+        },
+    )
+    if result['status'] == 'ok':
+        return jsonify({'status': 'success', 'message': f'Server {server}:{port} added.'})
+    if result['status'] == 'duplicate':
+        return jsonify({'status': 'error', 'message': f"server {result['key']} already exists"}), 409
+    return jsonify({'status': 'error', 'message': result.get('message', 'failed to add server')}), 400
+
+
+@app.route('/settings/general-save', methods=['POST'])
+def general_save():
+    """Save the General tab (refresh_frequency, notified_emails, ignore_tables). Returns JSON."""
+    active = _resolve_active_environment()
+    if not active:
+        return jsonify({'status': 'error', 'message': 'no active environment'}), 400
+    try:
+        refresh_frequency = int(request.form.get('refresh_frequency', '30') or 30)
+    except (TypeError, ValueError):
+        refresh_frequency = 30
+    notified_emails = (request.form.get('notified_emails') or '').strip()
+    ignore_tables_input = request.form.get('ignore_tables') or ''
+    ignore_tables = [ln.strip() for ln in ignore_tables_input.split('\n') if ln.strip()]
+    ok = settings_db.update_general_settings(
+        active['value'],
+        refresh_frequency=refresh_frequency,
+        notified_emails=notified_emails,
+        ignore_tables=ignore_tables,
+    )
+    if not ok:
+        return jsonify({'status': 'error', 'message': 'failed to save'}), 500
+    return jsonify({'status': 'success', 'message': 'Application settings saved.'})
+
+
+@app.route('/settings/kafka-brokers-save', methods=['POST'])
+def kafka_brokers_save():
+    """Save the Kafka tab's brokers + clustered flag. Returns JSON."""
+    active = _resolve_active_environment()
+    if not active:
+        return jsonify({'status': 'error', 'message': 'no active environment'}), 400
+    brokers = (request.form.get('kafka_brokers') or '').strip()
+    clustered = 'kafka_clustered' in request.form
+    ok = settings_db.update_kafka_brokers(active['value'], brokers, clustered)
+    if not ok:
+        return jsonify({'status': 'error', 'message': 'failed to save'}), 500
+    return jsonify({'status': 'success', 'message': 'Kafka brokers saved.'})
+
+
+@app.route('/settings/tab/<name>', methods=['GET'])
+def settings_tab(name):
+    """
+    Return a single settings tab as an HTML fragment (no layout, no shell).
+    Used by the AJAX tab loader in templates/settings.html — every form inside
+    the returned HTML is a self-contained AJAX form (data-ajax-form).
+    """
+    if name not in SETTINGS_TABS:
+        return jsonify({'status': 'error', 'message': f'unknown tab: {name}'}), 404
+    active = _resolve_active_environment()
+    if not active:
+        return jsonify({'status': 'error', 'message': 'no active environment'}), 400
+
+    # Re-run the context processor so the partial has the same _safe_servers
+    # / _warning fields the full-page render used to inject. Without this,
+    # the databases partial's `{{ active_environment._safe_servers | tojson }}`
+    # would be empty.
+    ctx = inject_environment()
+    active = ctx['active_environment']
+
+    clr_overrides = settings_db.list_clr_overrides()
+    resp = make_response(render_template(
+        f'settings/_{name}.html',
+        active_environment=active,
+        clr_overrides=clr_overrides,
+    ))
+    # Tab fragments are loaded via fetch() and their content depends on the
+    # active env, the DB state, and the per-server flags. They must never be
+    # cached — a stale fragment would show the wrong brokers / servers / etc.
+    # after an env switch or a settings change. (See the issue where switching
+    # env from the top bar left the brokers textbox showing the cached empty
+    # value while the DB had a real one.)
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
+
+
+@app.route('/settings', methods=['GET'])
 def settings():
     """
-    Render and handle the per-environment settings page.
-    Reads/writes both the Kafka brokers (per-env) and the app settings
-    (refresh frequency, emails, ignore tables, servers) into the active env's
-    settings_json blob.
+    Render the Settings shell (page header + tab buttons + tab content
+    placeholder). The tab content itself is loaded by the browser via
+    GET /settings/tab/<name> — see the AJAX loader in templates/settings.html.
+    All form submissions in any tab are AJAX and return JSON.
     """
     active = _resolve_active_environment()
     if not active:
         return redirect(url_for('select_environment'))
-
-    # Load the active env's settings.json (with sensible defaults)
-    cfg = active.get('settings') or {}
-    refresh_frequency = cfg.get('refresh_frequency', 30)
-    notified_emails  = cfg.get('notified_emails', '')
-    servers          = cfg.get('servers', [])
-    ignore_tables    = '\n'.join(cfg.get('ignore_tables', []))
-
-    # On POST, save everything back into the env's settings_json + Kafka config
-    if request.method == 'POST':
-        import json
-
-        new_kafka_brokers = (request.form.get('kafka_brokers') or '').strip()
-        new_kafka_clustered = 'kafka_clustered' in request.form
-
-        refresh_frequency = int(request.form.get('refresh_frequency', '30') or 30)
-        notified_emails   = request.form.get('notified_emails', '')
-
-        ignore_tables_input = request.form.get('ignore_tables') or ''
-        new_ignore_tables = [ln.strip() for ln in ignore_tables_input.split('\n') if ln.strip()]
-
-        servers_json = request.form.get('servers') or '[]'
-        try:
-            new_servers = json.loads(servers_json) if servers_json else []
-        except json.JSONDecodeError:
-            new_servers = servers
-
-        new_settings = {
-            'refresh_frequency': refresh_frequency,
-            'notified_emails': notified_emails,
-            'ignore_tables': new_ignore_tables,
-            'servers': new_servers,
-        }
-
-        settings_db.update_environment(
-            active['value'],
-            kafka_brokers=new_kafka_brokers,
-            kafka_clustered=new_kafka_clustered,
-            settings=new_settings,
-        )
-
-        # Re-read for the response template
-        active = settings_db.get_environment(active['value'])
-        cfg = active.get('settings') or {}
-        refresh_frequency = cfg.get('refresh_frequency', 30)
-        notified_emails   = cfg.get('notified_emails', '')
-        servers           = cfg.get('servers', [])
-        ignore_tables     = '\n'.join(cfg.get('ignore_tables', []))
-
-        return render_template(
-            'settings.html',
-            active_environment=active,
-            clr_overrides=settings_db.list_clr_overrides(),
-            saved=True,
-        )
-
-    # CLR column overrides (managed in SQLite, pushed to secondary SQL Server on sync)
     clr_overrides = settings_db.list_clr_overrides()
-
     return render_template(
         'settings.html',
         active_environment=active,
         clr_overrides=clr_overrides,
-        saved=False,
     )
 
 

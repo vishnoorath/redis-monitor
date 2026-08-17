@@ -1,0 +1,60 @@
+<!--
+  Databases tab — server list with per-row Edit/Disable forms + Add server form.
+
+  IMPORTANT: this partial is loaded via innerHTML from a fetch() in the shell.
+  <script> tags inside innerHTML do NOT execute. So:
+    - The server data is placed on a `data-servers` attribute on the
+      <div id="serverList"> container (NOT a <script type="application/json"> tag).
+    - The renderer (renderServers) lives in the shell and is called from
+      init_databases_tab() after the tab content is injected.
+-->
+<div class="panel">
+    <div class="panel-head">
+        <div class="panel-title">Database servers ({{ active_environment.settings.servers | length }})</div>
+        <button type="button" class="btn btn-secondary" onclick="showAddServerForm()">+ Add server</button>
+    </div>
+
+    <div id="serverList" data-servers='{{ active_environment._safe_servers | tojson }}'></div>
+
+    <div id="addServerForm" class="panel" style="margin-top:12px; display:none; border-style:dashed;">
+        <div class="panel-head"><div class="panel-title">Add new server</div></div>
+        <form data-ajax-form id="addServerFormEl" action="/settings/server-add" method="POST">
+            <div class="form-grid-2">
+                <div class="form-row">
+                    <label class="form-label" for="newServer">Server IP / hostname</label>
+                    <input type="text" id="newServer" name="server" class="input mono" placeholder="10.10.98.66" required />
+                </div>
+                <div class="form-row">
+                    <label class="form-label" for="newDb">Database</label>
+                    <input type="text" id="newDb" name="db" class="input" placeholder="NitaraDB" required />
+                </div>
+                <div class="form-row">
+                    <label class="form-label" for="newUser">Username</label>
+                    <input type="text" id="newUser" name="user" class="input" placeholder="sa" required />
+                </div>
+                <div class="form-row">
+                    <label class="form-label" for="newPassword">Password</label>
+                    <input type="password" id="newPassword" name="password" class="input mono" />
+                </div>
+                <div class="form-row">
+                    <label class="form-label" for="newPort">Port</label>
+                    <input type="text" id="newPort" name="port" class="input mono" placeholder="1433" value="1433" />
+                </div>
+                <div class="form-row" style="grid-column:1 / -1;">
+                    <label style="display:flex; align-items:center; gap:8px;">
+                        <input type="checkbox" id="newIsPrimary" name="isPrimary" value="true"> Primary server
+                    </label>
+                </div>
+                <div class="form-row" style="grid-column:1 / -1;">
+                    <label style="display:flex; align-items:center; gap:8px;">
+                        <input type="checkbox" id="newSyncToKafka" name="sync_to_kafka" value="true"> Sync to Kafka backlog
+                    </label>
+                </div>
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button type="submit" class="btn btn-primary">Add</button>
+                <button type="button" class="btn btn-secondary" onclick="hideAddServerForm()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
