@@ -578,11 +578,18 @@ def sync_tables():
 
         # Find the target server's sync_to_kafka flag from the env's servers list.
         # Disabled servers are skipped from sync entirely.
+        # The API receives `server` as "IP:port" (e.g. "10.10.98.26:31813") but
+        # the env's settings.servers[*] stores `server` as just the IP and
+        # `port` as a separate field. Build a `server:port` key from each env
+        # entry and compare to the API input. UAT has two SQL Servers on the
+        # same IP (10.10.98.26:31812 primary / 10.10.98.26:31813 secondary) so
+        # matching on just the IP would always pick the primary.
         sync_to_kafka = False
         server_disabled = False
         if active:
             for srv in (active.get('settings') or {}).get('servers', []):
-                if srv.get('server') == server:
+                srv_key = f"{srv.get('server','')}:{srv.get('port','1433') or '1433'}"
+                if srv_key == server:
                     server_disabled = bool(srv.get('disabled', False))
                     if not server_disabled:
                         sync_to_kafka = bool(srv.get('sync_to_kafka', False))

@@ -506,7 +506,12 @@ def sync_tables_to_secondary(
     for s in servers:
         if s.get('isPrimary', False):
             primary_config = s
-        if s['server'] == server:
+        # The API caller passes the server as "IP:port" (e.g. "10.10.98.26:31813"),
+        # but the env's settings.servers[*].server is stored as just the IP
+        # (e.g. "10.10.98.26") with the port in a separate field. Split on ':'
+        # and compare the IP portion so the lookup works for UAT-style
+        # "two-SQL-Servers-on-one-IP" deployments as well.
+        if s['server'] == server.split(':', 1)[0]:
             secondary_config = s
 
     if not primary_config:
@@ -652,6 +657,12 @@ def sync_tables_to_secondary(
 
                 # ──────────────────────────────────────────────────────────────────
                 # STEP 2: Generate the DB-to-DB sync script. Skip if diff is empty.
+                #
+                # The dispatcher (and the VR / VR_CLR SPs it calls) must run on
+                # the SECONDARY: they read from primary via 4-part-name linked-
+                # server queries, so they live on the secondary side. The
+                # primary is the one without these SPs — calling them on
+                # primary_cursor raises 2812 "Could not find stored procedure".
                 # ──────────────────────────────────────────────────────────────────
                 if not diff_rows:
                     primary_cursor.close()
@@ -662,30 +673,13 @@ def sync_tables_to_secondary(
                     results['results'].append(sync_result)
                     continue
 
-                primary_cursor.execute("""
-                    EXEC dbo.usp_GenerateSyncScript_VR_Dispatcher @TableName = ?
-                """, (table_name,))
-
-                script_result = primary_cursor.fetchone()
-                if script_result and script_result[0]:
-                    sync_result['script'] = script_result[0]
-                else:
-                    primary_cursor.close()
-                    primary_conn.close()
-                    sync_result['status'] = 'error'
-                    sync_result['error'] = 'No sync script generated despite non-empty diff'
-                    results['results'].append(sync_result)
-                    continue
-
+                # Close the primary cursor/conn — we're done with primary until
+                # STEP 4 (Kafka, no DB connection needed there).
                 primary_cursor.close()
                 primary_conn.close()
 
-                # ──────────────────────────────────────────────────────────────────
-                # STEP 3: Execute the sync script on the secondary first.
-                # Kafka consumers should only see the change AFTER it's safely
-                # committed to the secondary DB.
-                # ──────────────────────────────────────────────────────────────────
-                secondary_conn_string = (
+                # Open a secondary connection just for the dispatcher.
+                dispatcher_conn_string = (
                     f"DRIVER={{ODBC Driver 18 for SQL Server}};"
                     f"SERVER={secondary_config['server']},{secondary_db_port};"
                     f"DATABASE={secondary_db_name};"
@@ -694,7 +688,41 @@ def sync_tables_to_secondary(
                     f"TrustServerCertificate=yes;"
                     f"Encrypt=yes;"
                 )
+                dispatcher_conn = pyodbc.connect(dispatcher_conn_string)
+                dispatcher_cursor = dispatcher_conn.cursor()
+                # The dispatcher EXEC's usp_GenerateSyncScript_VR[_CLR] internally
+                # and that SP returns a single row with the sync script. Calling
+                # the dispatcher via EXEC pipes that result set straight back
+                # to pyodbc — no need for INSERT INTO @script (pyodbc does not
+                # reliably expose a @script table variable from a single
+                # execute() call).
+                try:
+                    dispatcher_cursor.execute("""
+                        EXEC dbo.usp_GenerateSyncScript_VR_Dispatcher
+                            @TableName      = ?,
+                            @RemoteServerIP = ?,
+                            @RemoteDatabase = ?
+                    """, (table_name, primary_config['server'], db_name))
+                    script_row = dispatcher_cursor.fetchone()
+                    if script_row:
+                        # The VR SP returns a single column named SyncScript.
+                        # Use the first column by index to be column-name agnostic.
+                        sync_result['script'] = script_row[0]
+                    else:
+                        sync_result['status'] = 'error'
+                        sync_result['error'] = 'No sync script generated despite non-empty diff'
+                        results['results'].append(sync_result)
+                        continue
+                finally:
+                    dispatcher_cursor.close()
+                    dispatcher_conn.close()
 
+                # ──────────────────────────────────────────────────────────────────
+                # STEP 3: Execute the sync script on the secondary first.
+                # Kafka consumers should only see the change AFTER it's safely
+                # committed to the secondary DB.
+                # ──────────────────────────────────────────────────────────────────
+                secondary_conn_string = dispatcher_conn_string  # same params
                 secondary_conn = pyodbc.connect(secondary_conn_string)
                 secondary_cursor = secondary_conn.cursor()
                 secondary_cursor.execute(sync_result['script'])

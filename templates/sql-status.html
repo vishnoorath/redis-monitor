@@ -47,6 +47,14 @@
     const IGNORE_TABLES = {{ ignore_tables | tojson }};
     let cached = null;
 
+    // Server names look like "10.10.98.66:1433" — they contain dots AND colons,
+    // both of which are special characters in CSS selectors. When used in
+    // `querySelectorAll("#id ...")` the colon is parsed as a pseudo-class
+    // prefix, so Select All / per-row checkbox / Sync selected all silently
+    // fail. safeId() replaces both dots and colons with dashes so the IDs
+    // are safe in both `getElementById` and `querySelectorAll`.
+    const safeId = (s) => String(s).replace(/[.:]/g, '-');
+
     async function fetchTableCountData() {
         try {
             const response = await fetch('/api/replication/table-counts');
@@ -103,9 +111,9 @@
             const diffs = countDiffs(results[s]);
             const err = results[s].status === 'error';
             const badge = err ? 'error' : (diffs > 0 ? 'out-of-sync' : 'synced');
-            tabsHtml += `<button class="tab" onclick="switchTab('${s}','${s}')" id="tab-${s.replace(/\./g,'-')}">
+            tabsHtml += `<button class="tab" onclick="switchTab('${s}','${s}')" id="tab-${safeId(s)}">
                 ${s} <span class="badge ${badge}">${err ? 'ERR' : diffs}</span></button>`;
-            contentsHtml += `<div class="tab-panel" id="content-${s.replace(/\./g,'-')}">${serverPanel(s, results[s])}</div>`;
+            contentsHtml += `<div class="tab-panel" id="content-${safeId(s)}">${serverPanel(s, results[s])}</div>`;
         });
 
         tabs.innerHTML = tabsHtml;
@@ -140,23 +148,27 @@
             return `<div class="banner">All tables synced with ${name}.</div>`;
         }
 
+        // Pre-compute the safe ID once. Server names like "10.10.98.66:1433"
+        // would otherwise produce invalid CSS selectors because of the colon.
+        const sid = safeId(name);
+
         return `
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
                 <div style="display:flex; align-items:center; gap:12px;">
                     <strong>Tables with differences (${diffs.length})</strong>
                     <label style="display:flex; align-items:center; gap:6px;">
-                        <input type="checkbox" onchange="toggleSelectAll('${name}', this.checked)"> Select all
+                        <input type="checkbox" onchange="toggleSelectAll('${sid}', this.checked)"> Select all
                     </label>
                 </div>
                 <div style="display:flex; gap:8px;">
-                    <button class="btn btn-secondary" onclick="exportCsv('${name}')">Export CSV</button>
-                    <button class="btn btn-primary" id="sync-btn-${name.replace(/\./g,'-')}" disabled onclick="syncSelected('${name}')">
+                    <button class="btn btn-secondary" onclick="exportCsv('${sid}')">Export CSV</button>
+                    <button class="btn btn-primary" id="sync-btn-${sid}" disabled onclick="syncSelected('${sid}')">
                         Sync selected (0)
                     </button>
                 </div>
             </div>
-            <div id="sync-status-${name.replace(/\./g,'-')}" style="margin-bottom:12px;"></div>
-            <table class="data-table" id="diff-table-${name.replace(/\./g,'-')}">
+            <div id="sync-status-${sid}" style="margin-bottom:12px;"></div>
+            <table class="data-table" id="diff-table-${sid}">
                 <thead><tr>
                     <th style="width:40px;"></th>
                     <th>Table</th>
@@ -168,7 +180,7 @@
                     <tr data-table-name="${t}" data-difference="${d.difference ?? 0}">
                         <td><input type="checkbox" class="table-checkbox"
                             data-server="${name}" data-table="${t}"
-                            onchange="updateSyncBtn('${name}')"></td>
+                            onchange="updateSyncBtn('${sid}')"></td>
                         <td><code>${t}</code></td>
                         <td style="text-align:right; font-family:var(--font-mono);">${d.primary_count ?? '—'}</td>
                         <td style="text-align:right; font-family:var(--font-mono);">${d.secondary_count ?? '—'}</td>
@@ -185,44 +197,50 @@
     function switchTab(tab, server) {
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-        document.getElementById(`tab-${tab.replace(/\./g,'-')}`)?.classList.add('active');
-        document.getElementById(`content-${tab.replace(/\./g,'-')}`)?.classList.add('active');
+        document.getElementById(`tab-${safeId(tab)}`)?.classList.add('active');
+        document.getElementById(`content-${safeId(tab)}`)?.classList.add('active');
     }
 
     function toggleSelectAll(server, checked) {
-        document.querySelectorAll(`#diff-table-${server.replace(/\./g,'-')} .table-checkbox`)
+        document.querySelectorAll(`#diff-table-${server} .table-checkbox`)
             .forEach(cb => cb.checked = checked);
         updateSyncBtn(server);
     }
 
     function updateSyncBtn(server) {
-        const sel = document.querySelectorAll(`#diff-table-${server.replace(/\./g,'-')} .table-checkbox:checked`);
-        const btn = document.getElementById(`sync-btn-${server.replace(/\./g,'-')}`);
+        const sel = document.querySelectorAll(`#diff-table-${server} .table-checkbox:checked`);
+        const btn = document.getElementById(`sync-btn-${server}`);
         if (btn) {
             btn.disabled = sel.length === 0;
             btn.textContent = `Sync selected (${sel.length})`;
         }
     }
 
-    async function syncSelected(server) {
-        const sel = Array.from(
-            document.querySelectorAll(`#diff-table-${server.replace(/\./g,'-')} .table-checkbox:checked`)
-        ).map(cb => cb.dataset.table);
-        if (!sel.length) return;
+    async function syncSelected(sid) {
+        // `sid` is the safe ID used in DOM ids (e.g. "10-10-98-66-1433").
+        // The original server name (e.g. "10.10.98.66:1433") is read from the
+        // checkbox's data-server attribute — the API needs the original form
+        // to look up the server in env settings.
+        const checked = Array.from(
+            document.querySelectorAll(`#diff-table-${sid} .table-checkbox:checked`)
+        );
+        if (!checked.length) return;
+        const server = checked[0].dataset.server;
+        const tables = checked.map(cb => cb.dataset.table);
 
         const overlay = document.getElementById('sync-loading-overlay');
         const msg = document.getElementById('sync-loading-message');
-        msg.textContent = `Syncing ${sel.length} table(s) → ${server}...`;
+        msg.textContent = `Syncing ${tables.length} table(s) → ${server}...`;
         overlay.style.display = 'flex';
 
         try {
             const res = await fetch('/api/replication/sync', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ server, tables: sel })
+                body: JSON.stringify({ server, tables })
             });
             const result = await res.json();
-            showResults(server, result);
+            showResults(sid, server, result);
         } catch (err) {
             alert(`Sync failed: ${err.message}`);
         } finally {
@@ -230,8 +248,8 @@
         }
     }
 
-    function showResults(server, result) {
-        const statusEl = document.getElementById(`sync-status-${server.replace(/\./g,'-')}`);
+    function showResults(sid, server, result) {
+        const statusEl = document.getElementById(`sync-status-${sid}`);
         if (!statusEl) return;
         if (result.error) {
             statusEl.innerHTML = `<div class="banner error">${result.error}</div>`;
@@ -257,7 +275,7 @@
 
     function exportCsv(server) {
         const rows = Array.from(
-            document.querySelectorAll(`#diff-table-${server.replace(/\./g,'-')} tbody tr`)
+            document.querySelectorAll(`#diff-table-${server} tbody tr`)
         );
         const csv = ['Table Name,Primary,Secondary,Δ'].concat(rows.map(r => {
             const cells = r.querySelectorAll('td');
