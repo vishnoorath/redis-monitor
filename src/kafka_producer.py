@@ -112,9 +112,22 @@ class KafkaBacklogProducer:
 
             try:
                 json_bytes = json.dumps(payload, default=str).encode('utf-8')
+                # Kafka message key must be str / bytes / None. pyodbc returns
+                # the PK column's native type — int / float / datetime / UUID
+                # all need to be coerced to str before produce(). The first
+                # column is normally the PK (or close to it); fall back to 'Id'
+                # if the first column is NULL.
+                raw_key = row_dict.get(column_names[0]) or row_dict.get('Id')
+                if raw_key is None:
+                    kafka_key = None
+                elif isinstance(raw_key, (str, bytes)):
+                    kafka_key = raw_key
+                else:
+                    # int, float, datetime, UUID, Decimal, etc. — stringify.
+                    kafka_key = str(raw_key)
                 self._producer.produce(
                     self.topic,
-                    key=row_dict.get(column_names[0]) or row_dict.get('Id') or '',
+                    key=kafka_key,
                     value=json_bytes,
                 )
                 # Flush periodically

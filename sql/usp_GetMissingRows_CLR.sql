@@ -9,15 +9,32 @@ GO
 -- for tables that have CLR-type columns (e.g. [dbo].[Farms].[GeoPoint] geography).
 --
 -- Runs on SECONDARY (which has a linked server pointing to PRIMARY).
--- Uses OPENQUERY against the primary, sidestepping SQL Server error 7325.
+-- Uses a SINGLE OPENQUERY against the primary, sidestepping SQL Server
+-- error 7325 (CLR types can't be read via 4-part-name distributed queries).
+--
+-- === Why this was rewritten ===
+-- The previous version chunked local PKs into 100-row NOT IN lists, emitted
+-- one result set per chunk via sp_executesql in a WHILE loop, and relied on
+-- the caller (pyodbc) to call nextset() to see them all. Two problems:
+--   (1) The chunked logic was mathematically wrong: unioning "primary rows
+--       NOT IN (chunk_i)" across all chunks gives almost all primary rows,
+--       not "primary rows NOT IN (all local PKs)". For Farms, the result
+--       was ~26817 "missing" rows that were actually already in local.
+--   (2) pyodbc's fetchall() on a multi-result-set SP returns only the
+--       FIRST result set, so callers (sync code) saw the wrong diff and
+--       published thousands of false-positive "change" events to Kafka.
+--
+-- The fix: do the NOT IN ONCE on the secondary side (outside OPENQUERY).
+-- The OPENQUERY inner string is just a column list of the primary table
+-- (fixed size, ~few KB) and the NOT IN is evaluated locally — no 8000-char
+-- limit on the inner string, and the SP returns a single result set with
+-- the real diff.
 --
 -- Columns listed in dbo.ClrColumnOverrides are CAST to their override type
--- (e.g. NVARCHAR(MAX)) before being returned — this handles two cases:
---   1. CLR types like geography / geometry / hierarchyid that ODBC can't carry
---   2. nvarchar columns whose values look numeric (e.g. '20.9425972') and get
---      mis-coerced to float by the ODBC driver
---
--- All OTHER columns pass through unchanged (their native types travel fine).
+-- (e.g. NVARCHAR(MAX)) inside the OPENQUERY — same CLR-pass-through behavior
+-- as the original (geography/geometry/hierarchyid, plus any NVARCHAR columns
+-- whose values look numeric and would otherwise get coerced to float by
+-- the ODBC driver).
 --
 -- Expected companion table (created separately):
 --   CREATE TABLE dbo.ClrColumnOverrides (
@@ -35,8 +52,8 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
+    DECLARE @InnerColList NVARCHAR(MAX) = '';  -- columns inside the OPENQUERY (with CAST overrides)
     DECLARE @OuterColList NVARCHAR(MAX) = '';  -- columns returned to the caller
-    DECLARE @InnerColList NVARCHAR(MAX) = '';  -- columns inside the OPENQUERY (CAST only overrides)
     DECLARE @PKColumn     NVARCHAR(128);
 
     -- 0. PK discovery
@@ -79,65 +96,21 @@ BEGIN
     SET @OuterColList = LEFT(@OuterColList, LEN(@OuterColList) - 1);
     SET @InnerColList = LEFT(@InnerColList, LEN(@InnerColList) - 1);
 
-    -- 2. Pull PKs from local table into a temp table via dynamic SQL
-    CREATE TABLE #LocalPks (PkVal NVARCHAR(450) NOT NULL);
+    -- 2. Single OPENQUERY (no chunking). The NOT IN runs on the SECONDARY
+    --    (caller's session), not inside the remote pass-through, so:
+    --      - no 8000-char limit on the inner string (it's just the column list)
+    --      - one result set, not 270 — pyodbc fetchall() sees the real diff
+    DECLARE @Sql NVARCHAR(MAX);
+    SET @Sql = N'SELECT ' + @OuterColList + N' ' +
+               N'FROM OPENQUERY([' + @PrimaryServerName + N'], ' +
+                   CHAR(39) +
+                       N'SELECT ' + @InnerColList + N' ' +
+                       N'FROM [' + @PrimaryDatabase + N'].[dbo].[' + @TableName + N']' +
+                   CHAR(39) +
+               N') AS R ' +
+               N'WHERE R.[' + @PKColumn + N'] NOT IN ' +
+                   N'(SELECT [' + @PKColumn + N'] FROM [dbo].[' + @TableName + N']);';
 
-    DECLARE @PullSql NVARCHAR(MAX) =
-        N'INSERT INTO #LocalPks (PkVal) ' +
-        N'SELECT CAST([' + @PKColumn + N'] AS NVARCHAR(450)) ' +
-        N'FROM [dbo].[' + @TableName + N'] ' +
-        N'OPTION (MAXDOP 1);';
-    EXEC sp_executesql @PullSql;
-
-    DECLARE @LocalPkCount INT = (SELECT COUNT(*) FROM #LocalPks);
-    DECLARE @Done INT = 0;
-    DECLARE @LocalPkList NVARCHAR(MAX);
-
-    -- 3. Process PKs in chunks so the OPENQUERY inner string stays under 8000 chars.
-    WHILE @Done < @LocalPkCount
-    BEGIN
-        DECLARE @ChunkSize INT = 100;  -- ~100 PKs per chunk; sized to keep the OPENQUERY inner
-                                       -- string safely under the 8000-char NVARCHAR limit even
-                                       -- for tables with many wide columns (e.g. Farms has 38 cols).
-
-        SET @LocalPkList =
-            STUFF(
-                (
-                    SELECT ',' + CHAR(39) + CHAR(39)
-                                  + REPLACE(PkVal, CHAR(39), CHAR(39) + CHAR(39))
-                                  + CHAR(39) + CHAR(39)
-                    FROM (
-                        SELECT PkVal
-                        FROM #LocalPks
-                        ORDER BY PkVal
-                        OFFSET @Done ROWS FETCH NEXT @ChunkSize ROWS ONLY
-                    ) AS chunk
-                    FOR XML PATH(''), TYPE
-                ).value('.', 'NVARCHAR(MAX)'),
-                1, 1, '');
-
-        IF @LocalPkList IS NULL OR LEN(@LocalPkList) = 0
-            SET @LocalPkList = CHAR(39) + CHAR(39) + '__NO_LOCAL_PK__' + CHAR(39) + CHAR(39);
-
-        DECLARE @WhereClause NVARCHAR(MAX) =
-            N'WHERE [' + @PKColumn + N'] NOT IN (' + @LocalPkList + N')';
-
-        DECLARE @InnerSql NVARCHAR(MAX);
-        SET @InnerSql = N'SELECT ' + @InnerColList + N' ' +
-                        N'FROM [' + @PrimaryDatabase + N'].[dbo].[' + @TableName + N'] ' +
-                        @WhereClause;
-
-        DECLARE @Sql NVARCHAR(MAX);
-        SET @Sql = N'SELECT ' + @OuterColList + N' ' +
-                   N'FROM OPENQUERY([' + @PrimaryServerName + N'], ' +
-                   CHAR(39) + @InnerSql + CHAR(39) +
-                   N') AS R;';
-
-        EXEC sp_executesql @Sql;
-
-        SET @Done = @Done + @ChunkSize;
-    END
-
-    DROP TABLE #LocalPks;
+    EXEC sp_executesql @Sql;
 END
 GO

@@ -718,21 +718,112 @@ def sync_tables_to_secondary(
                     dispatcher_conn.close()
 
                 # ──────────────────────────────────────────────────────────────────
-                # STEP 3: Execute the sync script on the secondary first.
-                # Kafka consumers should only see the change AFTER it's safely
-                # committed to the secondary DB.
+                # STEP 3: Execute the sync on the secondary.
+                #
+                # Per-row INSERT with isolated error handling. The previous
+                # behaviour was to run the dispatcher's single batch
+                # INSERT...SELECT as one statement — but a single unique-index
+                # violation (e.g. a UserName already present under a different
+                # Id) would abort the entire sync of that table. With per-row
+                # mode, a failing row is logged and the loop continues, so
+                # the table sync succeeds even when individual rows collide
+                # with the destination's existing data.
+                #
+                # We use `diff_rows` (the rows the diff SP returned, already in
+                # Python) instead of re-running the dispatcher's script. The
+                # column list and CASTed types match because both the diff SP
+                # and the dispatcher build their column lists from the same
+                # sys.columns query.
                 # ──────────────────────────────────────────────────────────────────
                 secondary_conn_string = dispatcher_conn_string  # same params
                 secondary_conn = pyodbc.connect(secondary_conn_string)
                 secondary_cursor = secondary_conn.cursor()
-                secondary_cursor.execute(sync_result['script'])
-                secondary_conn.commit()
 
-                rows_affected = secondary_cursor.rowcount
+                # Build the per-row INSERT. The destination table has the same
+                # column list as `diff_columns` (the diff SP and the
+                # dispatcher share the sys.columns filter), so parameter
+                # positions align 1:1.
+                col_list = ', '.join(f'[{c}]' for c in diff_columns)
+                placeholders = ', '.join('?' for c in diff_columns)
+                insert_sql = f"INSERT INTO [{table_name}] ({col_list}) VALUES ({placeholders})"
+
+                # Detect IDENTITY columns on the destination — we need
+                # SET IDENTITY_INSERT ON so the source's identity values can
+                # be preserved (otherwise the destination would auto-assign
+                # and PK continuity would break).
+                secondary_cursor.execute('''
+                    SELECT c.name
+                    FROM sys.columns c
+                    JOIN sys.tables t ON c.object_id = t.object_id
+                    WHERE t.name = ? AND SCHEMA_NAME(t.schema_id) = 'dbo'
+                      AND c.is_identity = 1
+                ''', table_name)
+                identity_cols = [r[0] for r in secondary_cursor.fetchall()]
+                has_identity = bool(identity_cols)
+
+                if has_identity:
+                    secondary_cursor.execute(f'SET IDENTITY_INSERT [{table_name}] ON')
+
+                inserted = 0
+                failed = 0
+                failures = []
+                inserted_diff_rows = []  # track which diff rows actually inserted
+                pk_idx = diff_columns.index('Id') if 'Id' in diff_columns else 0
+
+                try:
+                    for row in diff_rows:
+                        try:
+                            secondary_cursor.execute(insert_sql, row)
+                            inserted += 1
+                            inserted_diff_rows.append(row)
+                        except pyodbc.Error as row_err:
+                            failed += 1
+                            if len(failures) < 20:  # cap failure-log size
+                                try:
+                                    pk_val = str(row[pk_idx])
+                                except Exception:
+                                    pk_val = '<unreadable>'
+                                err_text = str(row_err)
+                                if len(err_text) > 300:
+                                    err_text = err_text[:300] + '...'
+                                failures.append({'pk': pk_val, 'error': err_text})
+                            # Roll back this row's failed statement so the
+                            # connection is usable for the next row.
+                            try:
+                                while secondary_cursor.nextset():
+                                    pass
+                            except Exception:
+                                pass
+                finally:
+                    if has_identity:
+                        try:
+                            secondary_cursor.execute(f'SET IDENTITY_INSERT [{table_name}] OFF')
+                        except Exception:
+                            pass
+
+                secondary_conn.commit()
+                rows_affected = inserted
+
+                # Capture the actual rows that ended up in the secondary so
+                # Kafka can publish only the truth (failed rows aren't in
+                # secondary, so they shouldn't be advertised as "synced").
+                # We replace the local `diff_rows` reference for the Kafka
+                # step below.
+                diff_rows = inserted_diff_rows
+
                 secondary_cursor.close()
                 secondary_conn.close()
 
                 sync_result['rows_affected'] = rows_affected
+                sync_result['rows_failed'] = failed
+                sync_result['failures_sample'] = failures
+                if failed:
+                    logger.warning(
+                        "Per-row insert for '%s' had %d failures out of %d attempted. "
+                        "First few: %s",
+                        table_name, failed, len(diff_rows) + failed,
+                        failures[:3],
+                    )
 
                 # ──────────────────────────────────────────────────────────────────
                 # STEP 4: Publish to Kafka ONLY if sync_to_kafka is enabled
